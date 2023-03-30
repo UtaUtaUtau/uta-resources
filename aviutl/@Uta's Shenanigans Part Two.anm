@@ -1,0 +1,49 @@
+@Skew
+--track0:Skew X,-100,100,0
+--track1:Skew Y,-100,100,0
+function skewing(x, y, sx, sy)
+	return x + y * sx, x * sy + y
+end
+
+w2, h2 = obj.w / 2, obj.h / 2
+sx, sy = obj.track0 / 100, obj.track1 / 100
+x0, y0 = skewing(-w2, -h2, sx, sy)
+x1, y1 = skewing(w2, -h2, sx, sy)
+x2, y2 = skewing(w2, h2, sx, sy)
+x3, y3 = skewing(-w2, h2, sx, sy)
+
+obj.ox, obj.oy = skewing(obj.ox, obj.oy, sx, sy)
+obj.drawpoly(x0, y0, 0, x1, y1, 0, x2, y2, 0, x3, y3, 0)
+
+@TA-Rotate
+--track0:Rotate X,-360,360,0
+--track1:Rotate Y,-360,360,0
+--track2:Rotate Z,-360,360,0
+--check0:Rotate Objects,0
+--Dialog:Rotation Multiplier,rotMul=1;
+function rotate(x, y, z, rx, ry, rz)
+	local gs = math.sin(rx)
+	local gc = math.cos(rx)
+	local bs = math.sin(ry)
+	local bc = math.cos(ry)
+	local as = math.sin(rz)
+	local ac = math.cos(rz)
+
+	return x * ac * bc + y * (ac * bs * gs - as * gc) + z * (ac * bs * gc + as * gs), x * as * bc + y * (as * bs * gs + ac * gc) + z * (as * bs * gc - ac * gs), -x * bs + y * bc * gs + z * bc * gc
+end
+
+rx = obj.track0 * rotMul
+ry = obj.track1 * rotMul
+rz = obj.track2 * rotMul
+
+radX = math.rad(rx)
+radY = math.rad(ry)
+radZ = math.rad(rz)
+
+obj.ox, obj.oy, obj.oz = rotate(obj.ox, obj.oy, obj.oz, radX, radY, radZ)
+
+if obj.check0 then
+	obj.rx = rx
+	obj.ry = ry
+	obj.rz = rz
+end

@@ -1,0 +1,127 @@
+@Vectorscope
+--track0:Scale,0,100,95
+--track1:Point Size,1,16,16
+--color:0x000800
+--check0:Add BG,1
+function polyLine(x1, y1, x2, y2, w, col)
+    obj.load("figure", "Circle", col, w, w)
+    obj.draw(x1, y1)
+    obj.draw(x2, y2)
+    obj.load("figure", "Square", col)
+    local t = math.atan2(y1 - y2, x1 - x2)
+    local offx1 = w/2 * math.cos(t-math.pi/2)
+    local offx2 = w/2 * math.cos(t+math.pi/2)
+    local offy1 = w/2 * math.sin(t-math.pi/2)
+    local offy2 = w/2 * math.sin(t+math.pi/2)
+    obj.drawpoly(x1+offx1, y1+offy1, 0, x2+offx1, y2+offy1, 0, x2+offx2, y2+offy2, 0, x1+offx2, y1+offy2, 0)
+end
+
+function interp(a, b, amt)
+	return a * (1 - amt) + b * amt
+end
+
+function map(v, l, h, nl, nh)
+	local amt = (v - l) / (h - l)
+	return interp(nl, nh, amt)
+end
+
+size = obj.screen_h
+if size > obj.screen_w then size = obj.screen_w end
+
+obj.setoption("blend", 0)
+obj.setfont("Consolas", 32, 3, 0xffffff, 0x262626)
+obj.load("framebuffer")
+colors = {}
+standards = {
+	{-0.5592544343120553, 0.12826936566790254, "Y"},
+	{0.18855596753181683, -0.788856598857601, "Cy"},
+	{-0.3706984667802385, -0.6605872331896985, "G"},
+	{0.37069846678023854, 0.6605872331896984, "Mg"},
+	{-0.18855596753181683, 0.788856598857601, "R"},
+	{0.5592544343120553, -0.12826936566790262, "B"}
+}
+for x = 0, obj.w - 1, map(obj.track0, 0, 100, obj.w, 1) do
+	for y = 0, obj.h - 1, map(obj.track0, 0, 100, obj.h, 1) do
+		local xx = math.floor(x)
+		local yy = math.floor(y)
+		local r, g, b, a = obj.getpixel(xx, yy, "rgb")
+		r = r / 255
+		g = g / 255
+		b = b / 255
+		local cb = -0.147 * r - 0.289 * g + 0.436 * b
+		local cr = 0.615 * r - 0.515 * g - 0.1 * b
+		local cx = cb / 0.587
+		local cy = -cr / 0.587
+		local mag = math.sqrt(cx * cx + cy * cy)
+		
+		if mag > 1 then
+			cx = cx / mag
+			cy = cy / mag
+		end
+		
+		table.insert(colors, {size * cx / 2, size * cy / 2})
+	end
+end
+
+if obj.check0 then
+	obj.load("figure", "Circle", 0x262626, size)
+	obj.draw()
+end
+skin_angle = math.rad(123.6)
+skin_x = size * math.cos(skin_angle) / 2.1
+skin_y = -size * math.sin(skin_angle) / 2.1
+polyLine(0, 0, skin_x, skin_y, 2, 0xffffff)
+obj.load("figure", "Circle", 0xffffff, size, 2)
+obj.draw()
+for i = 1, #standards do
+	obj.load("figure", "Circle", 0xffffff, 32, 2)
+	obj.draw(standards[i][1] * size / 2, -standards[i][2] * size / 2)
+	obj.load("text", standards[i][3])
+	obj.draw(standards[i][1] * size / 1.75, -standards[i][2] * size / 1.75)
+end
+
+obj.setoption("blend", 1)
+for i = 1, #colors - 1 do
+	local col1 = colors[i]
+	local col2 = colors[i+1]
+	polyLine(col1[1], col1[2], col2[1], col2[2], obj.track1, color)
+end
+
+@Waveform Monitor
+--track0:Scale,0,100,95
+--track1:Point Size,1,16,16
+--track2:Alpha,0,100,25
+--color:0x000800
+--check0:Add BG,1
+function interp(a, b, amt)
+	return a * (1 - amt) + b * amt
+end
+
+function map(v, l, h, nl, nh)
+	local amt = (v - l) / (h - l)
+	return interp(nl, nh, amt)
+end
+
+obj.setoption("blend", 0)
+obj.load("framebuffer")
+colors = {}
+for x = 0, obj.w - 1, map(obj.track0, 0, 100, obj.w, 1) do
+	for y = 0, obj.h - 1, map(obj.track0, 0, 100, obj.h, 1) do
+		local xx = math.floor(x)
+		local yy = math.floor(y)
+		local luma, cb, cr, a = obj.getpixel(xx, yy, "yc")
+		table.insert(colors, {x - obj.screen_w / 2, obj.screen_h / 2 - obj.screen_h * luma / 4096})
+	end
+end
+
+if obj.check0 then
+	obj.load("figure", "Background", 0x262626, size)
+	obj.draw()
+end
+
+obj.setoption("blend", 1)
+obj.load("figure", "Circle", color, obj.track1)
+for i = 1, #colors - 1 do
+	local col = colors[i]
+	obj.draw(col[1], col[2])
+end

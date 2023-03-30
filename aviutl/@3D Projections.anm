@@ -1,0 +1,187 @@
+@Sphere Projection (Cube Sphere)
+--track0:Size,0,1024,100
+--track1:Quality,1,256,8,1
+
+function cubeToSphere(x, y, z)
+	local xx = x * x
+	local yy = y * y
+	local zz = z * z
+	
+	return x * math.sqrt(1 - yy / 2 - zz / 2 + yy * zz / 3)
+end
+
+function sphereUV(x, y, z)
+	local length = math.sqrt(x*x + y*y + z*z)
+	local nx = x / length
+	local ny = y / length
+	local nz = z / length
+	
+	local theta = math.acos(-ny)
+	local phi = math.atan2(-nz, nx) + math.pi
+	
+	return obj.w * (1 - phi / (2 * math.pi)), obj.h * theta / math.pi
+end
+
+function cubeToSphere2(x, y, z, r)
+	return cubeToSphere(x, y, z) * r, cubeToSphere(y, z, x) * r, cubeToSphere(z, x, y) * r
+end
+
+
+q = math.floor(obj.track1 / 2)
+r = obj.track0
+
+
+for x = -q, q-1 do
+	for y = -q, q-1 do
+		for z = -1, 1, 2 do
+			local cx0 = x / q
+			local cy0 = y / q
+			local cx1 = (x+1) / q
+			local cy1 = (y+1) / q
+			
+			local sx0, sy0, sz0 = cubeToSphere2(cx0, cy0, z, r)
+			local sx1, sy1, sz1 = cubeToSphere2(cx1, cy0, z, r)
+			local sx2, sy2, sz2 = cubeToSphere2(cx1, cy1, z, r)
+			local sx3, sy3, sz3 = cubeToSphere2(cx0, cy1, z, r)
+			
+			local u0, v0 = sphereUV(sx0, sy0, sz0)
+			local u1, v1 = sphereUV(sx1, sy1, sz1)
+			local u2, v2 = sphereUV(sx2, sy2, sz2)
+			local u3, v3 = sphereUV(sx3, sy3, sz3)
+			
+			obj.drawpoly(sx0, sy0, sz0, sx1, sy1, sz1, sx2, sy2, sz2, sx3, sy3, sz3, u0, v0, u1, v1, u2, v2, u3, v3)
+			
+			sx0, sy0, sz0 = cubeToSphere2(cx0, z, cy0, r)
+			sx1, sy1, sz1 = cubeToSphere2(cx1, z, cy0, r)
+			sx2, sy2, sz2 = cubeToSphere2(cx1, z, cy1, r)
+			sx3, sy3, sz3 = cubeToSphere2(cx0, z, cy1, r)
+			
+			u0, v0 = sphereUV(sx0, sy0, sz0)
+			u1, v1 = sphereUV(sx1, sy1, sz1)
+			u2, v2 = sphereUV(sx2, sy2, sz2)
+			u3, v3 = sphereUV(sx3, sy3, sz3)
+			
+			obj.drawpoly(sx0, sy0, sz0, sx1, sy1, sz1, sx2, sy2, sz2, sx3, sy3, sz3, u0, v0, u1, v1, u2, v2, u3, v3)
+			
+			sx0, sy0, sz0 = cubeToSphere2(z, cx0, cy0, r)
+			sx1, sy1, sz1 = cubeToSphere2(z, cx1, cy0, r)
+			sx2, sy2, sz2 = cubeToSphere2(z, cx1, cy1, r)
+			sx3, sy3, sz3 = cubeToSphere2(z, cx0, cy1, r)
+			
+			u0, v0 = sphereUV(sx0, sy0, sz0)
+			u1, v1 = sphereUV(sx1, sy1, sz1)
+			u2, v2 = sphereUV(sx2, sy2, sz2)
+			u3, v3 = sphereUV(sx3, sy3, sz3)
+			
+			obj.drawpoly(sx0, sy0, sz0, sx1, sy1, sz1, sx2, sy2, sz2, sx3, sy3, sz3, u0, v0, u1, v1, u2, v2, u3, v3)
+		end
+	end
+end
+
+@Sphere Projection (UV Friendly)
+--track0:Size,0,1024,100
+--track1:Quality,1,256,8,1
+--track2:Progress,0,100,0
+
+r = obj.track0
+
+function uvSphere(u, v)
+	local theta = math.pi * v
+	local phi = math.pi * (2 * u - 1) 
+	
+	local sinTheta = math.sin(theta)
+	local y = -math.cos(theta)
+	local x = -math.cos(phi) * sinTheta
+	local z = math.sin(phi) * sinTheta
+	
+	return x * r, y * r, z * r
+end
+
+function lerp(a, b, t)
+	return a * (1 - t) + b * t
+end
+
+function map(x, l, h, nl, nh)
+	local t = (x - l) / (h - l)
+	return lerp(nl, nh, t)
+end
+
+function coordLerp(x0, y0, z0, x1, y1, z1, t)
+	return lerp(x0, x1, t), lerp(y0, y1, t), lerp(z0, z1, t)
+end
+
+q = obj.track1
+amt = 1 - obj.track2 / 100
+aspect = obj.w / obj.h
+
+for u = 0, q-1 do
+	for v = 0, q-1 do
+		local lu0 = u / q
+		local lv0 = v / q
+		local lu1 = (u+1) / q
+		local lv1 = (v+1) / q
+		
+		local tu0 = obj.w - lu0 * obj.w
+		local tv0 = lv0 * obj.h
+		local tu1 = obj.w - lu1 * obj.w
+		local tv1 = lv1 * obj.h
+		
+		local sx0, sy0, sz0 = uvSphere(lu0, lv0)
+		local sx1, sy1, sz1 = uvSphere(lu0, lv1)
+		local sx2, sy2, sz2 = uvSphere(lu1, lv1)
+		local sx3, sy3, sz3 = uvSphere(lu1, lv0)
+		
+		local cx0, cy0, cz0 = map(lu0, 1, 0, -aspect * r, aspect * r), map(lv0, 0, 1, -r, r), -r
+		local cx1, cy1, cz1 = map(lu0, 1, 0, -aspect * r, aspect * r), map(lv1, 0, 1, -r, r), -r
+		local cx2, cy2, cz2 = map(lu1, 1, 0, -aspect * r, aspect * r), map(lv1, 0, 1, -r, r), -r
+		local cx3, cy3, cz3 = map(lu1, 1, 0, -aspect * r, aspect * r), map(lv0, 0, 1, -r, r), -r
+		
+		local x0, y0, z0 = coordLerp(sx0, sy0, sz0, cx0, cy0, cz0, amt)
+		local x1, y1, z1 = coordLerp(sx1, sy1, sz1, cx1, cy1, cz1, amt)
+		local x2, y2, z2 = coordLerp(sx2, sy2, sz2, cx2, cy2, cz2, amt)
+		local x3, y3, z3 = coordLerp(sx3, sy3, sz3, cx3, cy3, cz3, amt)
+		
+		obj.drawpoly(x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, tu0, tv0, tu0, tv1, tu1, tv1, tu1, tv0)
+	end
+end
+
+@Tunnel
+--track0:Split,3,128,5,1
+--track1:Repeat,1,1024,1,1
+--track2:Gap,-400,400,0
+--track3:Drift,0,100,0
+
+function rotate(x, y, st, ct)
+	local nx = x * ct - y * st
+	local ny = x * st + y * ct
+	return nx, ny
+end
+w = obj.w
+h = obj.h
+obj.effect("Image tiling", "Hx#", 2)
+
+r = w / (2 * math.pi)
+angle = 2 * math.pi / obj.track0
+st = math.sin(angle)
+ct = math.cos(angle)
+drift = obj.track3 / 100
+
+z0, z1 = 0, h
+for k = 1, obj.track1 do
+	local x0, y0 = 0, 1
+	local x1, y1 = rotate(x0, y0, st, ct)
+	local u0 = (w * drift * (k-1)) % w
+	local u1 = u0 + w / obj.track0
+	for i = 1, obj.track0 do
+		obj.drawpoly(x0 * r, y0 * r, z0, x1 * r, y1 * r, z0, x1 * r, y1 * r, z1, x0 * r, y0 * r, z1, u0, 0, u1, 0, u1, h, u0, h)
+		
+		x0 = x1
+		y0 = y1
+		x1, y1 = rotate(x0, y0, st, ct)
+		
+		u0 = u1
+		u1 = u0 + w / obj.track0
+	end
+	z0 = z1 + h * obj.track2 / 100
+	z1 = z0 + h
+end

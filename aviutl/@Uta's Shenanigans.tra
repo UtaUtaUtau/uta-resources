@@ -1,0 +1,391 @@
+@Ease In-Out
+--speed:0,0
+--param: 500
+function ease(x, e, off)
+    local offp = 1 - off
+    local xp = 1 - x
+    if x < off then
+        return off * math.pow(x / off, e)
+    else
+        return 1 - offp * math.pow(xp / offp, e)
+    end
+end
+c = 0.5
+if obj.getpoint("accelerate") then
+    c = c + 0.25
+end
+if obj.getpoint("decelerate") then
+    c = c - 0.25
+end
+
+idx, rat = math.modf(obj.getpoint("index"))
+exp = obj.getpoint("param")
+amt = ease(rat, exp/100, c)
+
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx+1, 0) * amt
+
+@Ease In
+--param: 500
+function ease(x, e, off)
+    local offp = 1 - off
+    local xp = 1 - x
+    if x < off then
+        return off * math.pow(x / off, e)
+    else
+        return 1 - offp * math.pow(xp / offp, e)
+    end
+end
+idx, rat = math.modf(obj.getpoint("index"))
+exp = obj.getpoint("param")
+amt = ease(rat, exp/100, 1)
+
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx+1, 0) * amt
+
+@Ease Out
+--param: 500
+function ease(x, e, off)
+    local offp = 1 - off
+    local xp = 1 - x
+    if x < off then
+        return off * math.pow(x / off, e)
+    else
+        return 1 - offp * math.pow(xp / offp, e)
+    end
+end
+idx, rat = math.modf(obj.getpoint("index"))
+exp = obj.getpoint("param")
+amt = ease(rat, exp/100, 0)
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx+1, 0) * amt
+
+@Ease In-Out (Exponential)
+--speed:0,0
+--param: 1200
+function ease(x, e, off)
+    local offp = 1 - off
+    local xp = 1 - x
+    if x < off then
+        return off * ((e^(x / off) - 1) / (e - 1))
+    else
+        return 1 - offp * ((e^(xp / offp) - 1) / (e - 1))
+    end
+end
+c = 0.5
+if obj.getpoint("accelerate") then
+    c = c + 0.25
+end
+if obj.getpoint("decelerate") then
+    c = c - 0.25
+end
+idx, rat = math.modf(obj.getpoint("index"))
+exp = obj.getpoint("param")
+amt = ease(rat, exp/100, c)
+
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx+1, 0) * amt
+
+@Ease In (Exponential)
+--param: 1200
+function ease(x, e, off)
+    local offp = 1 - off
+    local xp = 1 - x
+    if x < off then
+        return off * ((e^(x / off) - 1) / (e - 1))
+    else
+        return 1 - offp * ((e^(xp / offp) - 1) / (e - 1))
+    end
+end
+idx, rat = math.modf(obj.getpoint("index"))
+exp = obj.getpoint("param")
+amt = ease(rat, exp/100, 1)
+
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx+1, 0) * amt
+
+@Ease Out (Exponential)
+--param: 1200
+function ease(x, e, off)
+    local offp = 1 - off
+    local xp = 1 - x
+    if x < off then
+        return off * ((e^(x / off) - 1) / (e - 1))
+    else
+        return 1 - offp * ((e^(xp / offp) - 1) / (e - 1))
+    end
+end
+idx, rat = math.modf(obj.getpoint("index"))
+exp = obj.getpoint("param")
+amt = ease(rat, exp/100, 0)
+
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx+1, 0) * amt
+
+@Spline Movement
+--speed:0,0
+--param:100
+function hermite(a, b, c, d, t, ten, bi)
+	local m0, m1, t2, t3
+	local w, x, y, z
+
+	t2 = t*t
+	t3 = t2*t
+
+	m0 = ((b - a) * (1 + bi) * (1 - ten) / 2) + ((c - b) * (1 - bi) * (1 - ten) / 2)
+	m1 = ((c - b) * (1 + bi) * (1 - ten) / 2) + ((d - c) * (1 - bi) * (1 - ten) / 2)
+
+	w = 2*t3 - 3*t2 + 1
+	x = t3 - 2*t2 + t
+	y = t3 - t2
+	z = -2*t3 + 3*t2
+
+	return w*b + x*m0 + y*m1 + z*c
+end
+ten = obj.getpoint("param")/100.0 - 1
+bi = 0
+if obj.getpoint("accelerate") then
+    bi = bi - 1
+end
+if obj.getpoint("decelerate") then
+    bi = bi + 1
+end
+
+idx, rat = math.modf(obj.getpoint("index"))
+
+return hermite(obj.getpoint(idx-1, 0), obj.getpoint(idx, 0), obj.getpoint(idx+1, 0), obj.getpoint(idx+2, 0), rat, ten, bi)
+
+@Spline Movement (Catmull-Rom)
+--param:50
+function distance(x0, y0, z0, x1, y1, z1)
+	local x = x0 - x1
+	local y = y0 - y1
+	local z = z0 - z1
+	return math.sqrt(x * x + y * y + z * z)
+end
+
+function catmullrom(x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, amt, a)
+	local t0 = 0
+	local t1 = math.pow(distance(x0, y0, z0, x1, y1, z1), a)
+	local t2 = t1 + math.pow(distance(x1, y1, z1, x2, y2, z2), a)
+	local t3 = t2 + math.pow(distance(x2, y2, z2, x3, y3, z3), a)
+	
+	local t = t1 * (1 - amt) + t2 * amt
+	
+	local a1x = x0 * (t1 - t) / (t1 - t0) + x1 * (t - t0) / (t1 - t0)
+	local a2x = x1 * (t2 - t) / (t2 - t1) + x2 * (t - t1) / (t2 - t1)
+	local a3x = x2 * (t3 - t) / (t3 - t2) + x3 * (t - t2) / (t3 - t2)
+	
+	local b1x = a1x * (t2 - t) / (t2 - t0) + a2x * (t - t0) / (t2 - t0)
+	local b2x = a2x * (t3 - t) / (t3 - t1) + a3x * (t - t1) / (t3 - t1)
+	
+	local cx = b1x * (t2 - t) / (t2 - t1) + b2x * (t - t1) / (t2 - t1)
+	
+	local a1y = y0 * (t1 - t) / (t1 - t0) + y1 * (t - t0) / (t1 - t0)
+	local a2y = y1 * (t2 - t) / (t2 - t1) + y2 * (t - t1) / (t2 - t1)
+	local a3y = y2 * (t3 - t) / (t3 - t2) + y3 * (t - t2) / (t3 - t2)
+	
+	local b1y = a1y * (t2 - t) / (t2 - t0) + a2y * (t - t0) / (t2 - t0)
+	local b2y = a2y * (t3 - t) / (t3 - t1) + a3y * (t - t1) / (t3 - t1)
+	
+	local cy = b1y * (t2 - t) / (t2 - t1) + b2y * (t - t1) / (t2 - t1)
+	
+	local a1z = z0 * (t1 - t) / (t1 - t0) + z1 * (t - t0) / (t1 - t0)
+	local a2z = z1 * (t2 - t) / (t2 - t1) + z2 * (t - t1) / (t2 - t1)
+	local a3z = z2 * (t3 - t) / (t3 - t2) + z3 * (t - t2) / (t3 - t2)
+	
+	local b1z = a1z * (t2 - t) / (t2 - t0) + a2z * (t - t0) / (t2 - t0)
+	local b2z = a2z * (t3 - t) / (t3 - t1) + a3z * (t - t1) / (t3 - t1)
+	
+	local cz = b1z * (t2 - t) / (t2 - t1) + b2z * (t - t1) / (t2 - t1)
+	
+	return cx, cy, cz
+end
+
+alpha = obj.getpoint("param") / 100.0
+
+idx, rat = math.modf(obj.getpoint("index"))
+num = obj.getpoint("num")
+
+if idx > 0 then
+	x0, y0, z0 = obj.getpoint(idx - 1, 0, 3)
+else
+	x0, y0, z0 = obj.getpoint(0, 0, 3)
+	x1, y1, z1 = obj.getpoint(1, 0, 3)
+	x2, y2, z2 = obj.getpoint(2, 0, 3)
+	x0 = x0 + (x0 - x1 * 2 + x2) / 2
+	y0 = y0 + (y0 - y1 * 2 + y2) / 2
+	z0 = z0 + (z0 - z1 * 2 + y2) / 2
+end
+
+if idx < num - 2 then
+	x3, y3, z3 = obj.getpoint(idx + 2, 0, 3)
+else
+	x3, y3, z3 = obj.getpoint(num - 1, 0, 3)
+	x2, y2, z2 = obj.getpoint(num - 2, 0, 3)
+	x1, y1, z1 = obj.getpoint(num - 3, 0, 3)
+	x3 = x3 + (x3 - x2 * 2 + x1) / 2
+	y3 = y3 + (y3 - y2 * 2 + y1) / 2
+	z3 = z3 + (z3 - z2 * 2 + y1) / 2
+end
+
+x1, y1, z1 = obj.getpoint(idx    , 0, 3)
+x2, y2, z2 = obj.getpoint(idx + 1, 0, 3)
+
+i, dim = obj.getpoint("link")
+
+if dim < 3 then
+	z0, z1, z2, z3 = 0, 0, 0
+	if dim < 2 then
+		y0, y1, y2, y3 = 0, 0, 0
+	end
+end
+
+x, y, z = catmullrom(x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, rat, alpha)
+return x
+
+@Time Dependent Spline Movement (Catmull-Rom)
+--param:100
+function distance(x0, y0, z0, t0, x1, y1, z1, t1)
+	local x = x0 - x1
+	local y = y0 - y1
+	local z = z0 - z1
+	local t = (1000000 * (t0 - t1))
+	return math.sqrt(x * x + y * y + z * z + t * t)
+end
+
+function catmullrom(x0, y0, z0, tt0, x1, y1, z1, tt1, x2, y2, z2, tt2, x3, y3, z3, tt3, amt, a)
+	local t0 = 0
+	local t1 = math.pow(distance(x0, y0, z0, tt0, x1, y1, z1, tt1), a)
+	local t2 = t1 + math.pow(distance(x1, y1, z1, tt1, x2, y2, z2, tt2), a)
+	local t3 = t2 + math.pow(distance(x2, y2, z2, tt2, x3, y3, z3, tt3), a)
+	
+	local t = t1 * (1 - amt) + t2 * amt
+	
+	local a1x = x0 * (t1 - t) / (t1 - t0) + x1 * (t - t0) / (t1 - t0)
+	local a2x = x1 * (t2 - t) / (t2 - t1) + x2 * (t - t1) / (t2 - t1)
+	local a3x = x2 * (t3 - t) / (t3 - t2) + x3 * (t - t2) / (t3 - t2)
+	
+	local b1x = a1x * (t2 - t) / (t2 - t0) + a2x * (t - t0) / (t2 - t0)
+	local b2x = a2x * (t3 - t) / (t3 - t1) + a3x * (t - t1) / (t3 - t1)
+	
+	local cx = b1x * (t2 - t) / (t2 - t1) + b2x * (t - t1) / (t2 - t1)
+	
+	local a1y = y0 * (t1 - t) / (t1 - t0) + y1 * (t - t0) / (t1 - t0)
+	local a2y = y1 * (t2 - t) / (t2 - t1) + y2 * (t - t1) / (t2 - t1)
+	local a3y = y2 * (t3 - t) / (t3 - t2) + y3 * (t - t2) / (t3 - t2)
+	
+	local b1y = a1y * (t2 - t) / (t2 - t0) + a2y * (t - t0) / (t2 - t0)
+	local b2y = a2y * (t3 - t) / (t3 - t1) + a3y * (t - t1) / (t3 - t1)
+	
+	local cy = b1y * (t2 - t) / (t2 - t1) + b2y * (t - t1) / (t2 - t1)
+	
+	local a1z = z0 * (t1 - t) / (t1 - t0) + z1 * (t - t0) / (t1 - t0)
+	local a2z = z1 * (t2 - t) / (t2 - t1) + z2 * (t - t1) / (t2 - t1)
+	local a3z = z2 * (t3 - t) / (t3 - t2) + z3 * (t - t2) / (t3 - t2)
+	
+	local b1z = a1z * (t2 - t) / (t2 - t0) + a2z * (t - t0) / (t2 - t0)
+	local b2z = a2z * (t3 - t) / (t3 - t1) + a3z * (t - t1) / (t3 - t1)
+	
+	local cz = b1z * (t2 - t) / (t2 - t1) + b2z * (t - t1) / (t2 - t1)
+	
+	return cx, cy, cz
+end
+
+alpha = obj.getpoint("param") / 100.0
+
+idx, rat = math.modf(obj.getpoint("index"))
+num = obj.getpoint("num")
+
+if idx > 0 then
+	x0, y0, z0 = obj.getpoint(idx - 1, 0, 3)
+	t0 = obj.getpoint("time", idx - 1)
+else
+	x0, y0, z0 = obj.getpoint(0, 0, 3)
+	x1, y1, z1 = obj.getpoint(1, 0, 3)
+	x2, y2, z2 = obj.getpoint(2, 0, 3)
+	x0 = x0 + (x0 - x1 * 2 + x2) / 2
+	y0 = y0 + (y0 - y1 * 2 + y2) / 2
+	z0 = z0 + (z0 - z1 * 2 + y2) / 2
+	t0 = -1000000
+end
+
+if idx < num - 2 then
+	x3, y3, z3 = obj.getpoint(idx + 2, 0, 3)
+	t3 = obj.getpoint("time", idx + 2)
+else
+	x3, y3, z3 = obj.getpoint(num - 1, 0, 3)
+	x2, y2, z2 = obj.getpoint(num - 2, 0, 3)
+	x1, y1, z1 = obj.getpoint(num - 3, 0, 3)
+	x3 = x3 + (x3 - x2 * 2 + x1) / 2
+	y3 = y3 + (y3 - y2 * 2 + y1) / 2
+	z3 = z3 + (z3 - z2 * 2 + y1) / 2
+	t3 = obj.getpoint("time", num - 1) + 1000000
+end
+
+x1, y1, z1 = obj.getpoint(idx    , 0, 3)
+x2, y2, z2 = obj.getpoint(idx + 1, 0, 3)
+t1 = obj.getpoint("time", idx)
+t2 = obj.getpoint("time", idx + 1)
+
+i, dim = obj.getpoint("link")
+
+if dim < 3 then
+	z0, z1, z2, z3 = 0, 0, 0
+	if dim < 2 then
+		y0, y1, y2, y3 = 0, 0, 0
+	end
+end
+
+x, y, z = catmullrom(x0, y0, z0, t0, x1, y1, z1, t1, x2, y2, z2, t2, x3, y3, z3, t3, rat, alpha)
+
+return x
+
+@Bezier Curve
+function bezier(s, e, t)
+	if s == e then
+	    return obj.getpoint(s, 0)
+	else
+		local p1 = bezier(s, e-1, t)
+		local p2 = bezier(s+1, e, t)
+		return p1 * (1 - t) + p2 * t
+	end
+end
+
+n = obj.getpoint("num")
+length = obj.getpoint("time", n - 1)
+
+t = obj.getpoint("time")
+return bezier(0, n-1, t / length)
+
+@Smoothstep
+--param: 1
+function combination(n, k)
+	local res = 1
+	for i = 0, k - 1 do
+		res = res * ((n - i) / (i + 1))
+	end
+	return res
+end
+
+function smoothstep(N, x)
+	local res = 0
+	for n = 0, N do
+		res = res + combination(-N - 1, n) * combination(2 * N + 1, N - n) * math.pow(x, N + n + 1)
+	end
+	return res
+end
+
+idx, rat = math.modf(obj.getpoint("index"))
+N = obj.getpoint("param")
+amt = smoothstep(N, rat)
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx + 1, 0) * amt
+
+@Sinc
+--param: 5
+function sinc(x, k)
+	local a = math.pi * (2 * k * x - 1)
+	if a == 0 then
+		return 1
+	else
+		return math.sin(a) / a
+	end
+end
+k = obj.getpoint("param")
+idx, rat = math.modf(obj.getpoint("index"))
+amt = sinc(rat, k) * (1 - rat) + math.pow(rat, 1 / (k * k))
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx + 1, 0) * amt

@@ -1,0 +1,12 @@
+@Pixel Sort
+--track0:Base,0,4096,2048,1
+--track1:Range,0,4096,32,1
+--track2:Mode,1,6,1,1
+--track3:Direction,1,4,1,1
+--check0:Highlight Sorting,0
+--Dialog:Pixel Size,size=1;Stretch,enl=0;Stretch Direction,edir=1;Show Original Picture/chk,bg=1;
+require("PixelSorter_s")
+conf = obj.check0 == 1
+psize = 1
+if size > 1 then psize = math.floor(size) end
+PixelSorter_s.PixelSort(obj.track0, obj.track1, obj.track3, psize, obj.check0, edir, enl, obj.track2, bg)

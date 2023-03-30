@@ -1,0 +1,106 @@
+--param:512
+num = obj.getpoint("num")
+strength = obj.getpoint("param")
+function hypot(...)
+	local res = 0
+	for i, v in ipairs(arg) do
+		res = res + v * v
+	end
+	return math.sqrt(res)
+end
+
+function distance(x0, y0, z0, x1, y1, z1)
+	return hypot(x1 - x0, y1 - y0, z1 - z0)
+end
+
+function quadBezier(a, b, c, t)
+	local tp = 1 - t
+	return a * tp * tp + 2 * b * t * tp + c * t * t
+end
+
+function test(a, b, c, t)
+	local tt = 2 * t
+	if t > 0.5 then
+		tt = 2 * (t - 0.5)
+		return (c - b) * tt + b
+	end
+	return (b - a) * tt + a
+end
+
+function getCoordinate(idx)
+	i, dim = obj.getpoint("link")
+	x, y, z = obj.getpoint(idx, 0, 3)
+	if dim == 1 then
+		return x, 0, 0
+	elseif dim == 2 then
+		if i == 0 then
+			return x, y, 0
+		else
+			return y, x, 0
+		end
+	else
+		if i == 0 then
+			return x, y, z
+		elseif i == 1 then
+			return z, x, y
+		else
+			return y, z, x
+		end
+	end
+end
+
+function getInterval(idx)
+	if idx == num - 1 then
+		return 0
+	else
+		return strength * (obj.getpoint("time", idx+1) - obj.getpoint("time", idx))
+	end
+end
+
+function getControlPoint(index)
+	local cx, cy, cz
+	local firstpass = true
+	for idx = 0, index do
+		if idx == 0 then
+			local x0, y0, z0 = getCoordinate(0)
+			local x1, y1, z1 = getCoordinate(1)
+			local x = (x0 + x1) / 2
+			local y = (y0 + y1) / 2
+			local z = (z0 + z1) / 2
+			local dx = x1 - x0
+			local dy = y1 - y0
+			local factor = 0
+			if dx ~= 0 or dy ~= 0 then factor = getInterval(0) / hypot(dx, dy) end
+			cx = x - dy * factor
+			cy = y + dx * factor
+			cz = z
+		else
+			local x, y, z = getCoordinate(idx)
+			local dx = cx - x
+			local dy = cy - y
+			local dz = cz - z
+			local factor = 0
+			if dx ~= 0 or dy ~= 0 or dz ~= 0 then factor = getInterval(idx) / hypot(dx, dy, dz) end
+			cx = x - dx * factor
+			cy = y - dy * factor
+			cz = z - dz * factor
+		end
+	end
+	return cx, cy, cz
+end
+
+idx, rat = math.modf(obj.getpoint("index"))
+px, py, pz = obj.getpoint(idx, 0, 3)
+i, dim = obj.getpoint("link")
+
+cx, cy, cz = getControlPoint(idx)
+x0, y0, z0 = getCoordinate(idx)
+x1, y1, z1 = getCoordinate(idx+1)
+
+if i == 0 then
+	return quadBezier(x0, cx, x1, rat)
+elseif i == 1 then
+	return quadBezier(y0, cy, y1, rat)
+else
+	return quadBezier(z0, cz, z1, rat)
+end

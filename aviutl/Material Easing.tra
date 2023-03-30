@@ -1,0 +1,51 @@
+--speed:0,0
+--param:100
+function calcBezier(a, b, t)
+	local tp = 1 - t
+	return 3 * a * tp * tp * t + 3 * b * tp * t * t + t * t * t
+end
+
+function calcBezierPrime(a, b, t)
+	local tp = 1 - t
+	return 3 * tp * tp * a + 6 * tp * t * (b - a) + 3 * t * t * (1 - b)
+end
+
+function calcBezierInverse(a, b, t)
+	local x = t
+	local fx = calcBezier(a, b, x) - t
+	while math.abs(fx) > 1e-9 do
+		x = x - fx / calcBezierPrime(a, b, x)
+		fx = calcBezier(a, b, x) - t
+	end
+	return x;
+end
+
+function cubicBezier(x1, y1, x2, y2, t)
+	local x = calcBezierInverse(x1, x2, t)
+	return calcBezier(y1, y2, x)
+end	
+
+function emphEase(t)
+	local tt = t / 0.4
+	if t > 0.4 then
+		tt = (t - 0.4) / 0.6
+		return cubicBezier(0.05, 0.7, 0.1, 1, tt) * 0.6 + 0.4
+	end
+	return cubicBezier(0.3, 0, 0.8, 0.15, tt) * 0.4
+end
+
+idx, rat = math.modf(obj.getpoint("index"))
+easeIn = obj.getpoint("accelerate")
+easeOut = obj.getpoint("decelerate")
+amt = 0
+if easeIn and easeOut then
+	amt = emphEase(rat)
+elseif easeIn then
+	amt = cubicBezier(0.4, 0, 1, 1, rat)
+elseif easeOut then
+	amt = cubicBezier(0, 0, 0.2, 1, rat)
+else
+	amt = cubicBezier(0.4, 0, 0.2, 1, rat)
+end
+
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx+1, 0) * amt
