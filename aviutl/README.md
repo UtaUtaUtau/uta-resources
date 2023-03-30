@@ -30,6 +30,7 @@ also example here ig basically for Points u put `tetrahedronPoints` and for Face
 
 just look the names up they're funky shapes.
 
+| |
 |:---:|
 |`tetrahedron`|
 |`cube`|
