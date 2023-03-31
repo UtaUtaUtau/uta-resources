@@ -35,7 +35,7 @@ just look the names up they're funky shapes.
 
 | | | | |
 |:---:|:---:|:---:|:---:|
-|`tetrahedron`|`cube`|`octahedron`|`dodecahedron`
+|`tetrahedron`|`cube`|`octahedron`|`dodecahedron`|
 |`icosahedron`|`truncatedTetrahedron`|`cuboctahedron`|`truncatedOctahedron`|
 |`rhombicuboctahedron`|`icosidodecahedron`|\*`snubCube`|`truncatedIcosahedron`|
 |`rhombicosidodecahedron`|`triakisTetrahedron`|`triakisOctahedron`|`tetrakisHexahedron`|
