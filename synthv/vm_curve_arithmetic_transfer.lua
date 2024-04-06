@@ -276,9 +276,11 @@ function main()
     local result = SV:showCustomDialog(inputForm) -- show dialog
 
     if result.status then -- if success
-        -- get target automation and clear if enabled
+        -- get target automation
         local dstAuto = currNoteGroup:getParameter("vocalMode_"..result.answers.dst)
-        if result.answers.clearDest then dstAuto:removeAll() end
+        -- make temp automation and clear
+        local tempAuto = dstAuto:clone()
+        tempAuto:removeAll()
         
         -- read all source automations
         local automations = {}
@@ -302,12 +304,20 @@ function main()
         -- calculate expression for all blicks required and add points to target automation
         for _, blick in ipairs(evalBlicks) do
             local value = expr:eval(currNoteGroup, blick)
-            dstAuto:add(blick, value)
+            tempAuto:add(blick, value)
         end
 
         -- clear all source automations if enabled
         if result.answers.clearSrc then
             for _, auto in pairs(automations) do auto:removeAll() end
+        end
+
+        -- clear destination automation if enabled
+        if result.answers.clearDest then dstAuto:removeAll() end
+
+        -- transfer temp automation to destination automation
+        for _, point in ipairs(tempAuto:getAllPoints()) do
+            dstAuto:add(point[1], point[2])
         end
 
         -- simplify if enabled
