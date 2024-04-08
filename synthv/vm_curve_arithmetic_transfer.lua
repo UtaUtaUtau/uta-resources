@@ -1,20 +1,27 @@
-local SCRIPT_TITLE = "Vocal Mode Curve Arithmetic Transfer"
-local DESCRIPTION = "Transfer vocal mode parameters with arithmetic for parameter mixing.\nVocal modes are entered as the name of the mode."..
-"\n\nSupported operations = "..
-"\n - addition [+]"..
-"\n - subtraction/negation [-]"..
-"\n - multiplication [*]"..
-"\n - division [/]"..
-"\n - exponentiation [^]"..
-"\n - parenthesis ()";
+local SCRIPT_TITLE = "Parameter Curve Arithmetic Transfer"
+local DESCRIPTION = "Transfer parameter curves with arithmetic for parameter mixing."..
+"\n\nVocal modes are entered as the name of the mode."..
+"\nOther parameters are as follows:"..
+"\nPitch Deviation = pitchDelta"..
+"\nVibrato Envelope = vibratoEnv"..
+"\nTone Shift = toneShift"..
+"\nThe rest = all lowercase version of the name"..
+"\n\nSupported operations:"..
+"\n - basic arithmetic: +, -, *, /"..
+"\n - exponentiation: ^"..
+"\n - natural exponential function: exp(x)"..
+"\n - natural and base 10 logarithm: ln(x), log(x)"..
+"\n - positive part function: pos(x) = max(x, 0)"..
+"\n - negative part function: neg(x) = -min(x, 0)"..
+"\n - absolute value function: abs(x)";
 
 function getClientInfo()
     return {
         name =  SV:T(SCRIPT_TITLE),
         author =  "UtaUtaUtau",
         category =  "Uta's Shenanigans",
-        versionNumber =  1,
-        minEditorVersion =  0
+        versionNumber =  2,
+        minEditorVersion =  65537
     }
 end
 
@@ -26,12 +33,14 @@ function _dump(o, indent) -- Debug print anything
         end
         str = str:sub(0, -2).."\n"..string.rep(" ", indent-4).."}"
         return str
+    elseif type(o) == "string" then
+        return '"'..o..'"'
     else
         return tostring(o)
     end
 end
 
-function dump(o) -- dumb but with defaults
+function dump(o) -- dump but with defaults
     return _dump(o, 4)
 end
 
@@ -40,30 +49,50 @@ function count(str, pattern) -- count how many instances of pattern is in str
 end
 
 function inKeys(key, t) -- check if the key is in the keys of a table
-    for k, _ in pairs(t) do
-        if key == k then return true end
-    end
-    return false
+    return t[key] ~= nil
 end
 
 local inputForm = {
-    title =  SV:T(SCRIPT_TITLE),
-    message =  SV:T(DESCRIPTION),
-    buttons =  "OkCancel",
-    widgets =  {
+    title = SV:T(SCRIPT_TITLE),
+    message = SV:T(DESCRIPTION),
+    buttons = "OkCancel",
+    widgets = {
         {
-            name =  "expr", type =  "TextBox",
-            label =  "Enter mathematical expression here",
-            default =  "0.5 * Powerful + 0.5 * Heavy"
+            name = "expr", type = "TextBox",
+            label = "Enter mathematical expression here",
+            default = "0.5 * Powerful + 0.5 * Heavy"
         },
         {
-            name =  "dst", type =  "TextBox",
-            label =  "Enter the vocal mode to write to",
-            default =  "Power"
+            name = "dst", type =  "TextBox",
+            label = "Enter the vocal mode to write to",
+            default = "Power"
+        },
+        {
+            name = "sampleEvenly", type = "CheckBox",
+            text = "Sample automation evenly",
+            default = false
+        },
+        {
+            name = "divisions", type = "Slider",
+            label = "Divisions per quarter if sampling evenly",
+            format = "%.0f",
+            minValue = 1, maxValue = 32,
+            interval = 1,
+            default = 16
         },
         {
             name = "asDecimal", type = "CheckBox",
             text = "Convert percentages to decimal for calculations",
+            default = true
+        },
+        {
+            name = "asSemitones", type = "CheckBox",
+            text = "Use semitones for pitch deviation",
+            default = true
+        },
+        {
+            name = "asAmp", type = "CheckBox",
+            text = "Convert dB to amplitude for loudness",
             default = true
         },
         {
@@ -72,19 +101,36 @@ local inputForm = {
             default = true
         },
         {
-            name =  "clearSrc", type =  "CheckBox",
-            text =  "Clear source automations",
-            default =  false
+            name = "clearSrc", type = "CheckBox",
+            text = "Clear source automations",
+            default = false
         },
         {
-            name = "simplify", type =  "CheckBox",
+            name = "simplify", type = "CheckBox",
             text = "Simplify curve after transfer",
-            default =  false
+            default = false
         }
     }
 }
 
-local OPERATORS = {}
+-- INTERPRETER
+local OPERATORS = {
+    pos = "FPOS",
+    neg = "FNEG",
+    abs = "FABS",
+    exp = "FEXP",
+    ln = "FLN",
+    log = "FLOG"
+}
+local PARAMS = {
+    pitchDelta = true,
+    vibratoEnv = true,
+    loudness = true,
+    tension = true,
+    breathiness = true,
+    voicing = true,
+    gender = true
+}
 OPERATORS["+"] = "ADD"
 OPERATORS["-"] = "SUB"
 OPERATORS["*"] = "MUL"
@@ -93,7 +139,6 @@ OPERATORS["^"] = "EXP"
 OPERATORS["("] = "LPAR"
 OPERATORS[")"] = "RPAR"
 local DIGIT_PATTERN = "[%d%.]"
-local OPERATOR_PATTERN = "[%+%-%*%/%^%(%)]"
 local PARAMETER_PATTERN = "[A-Za-z_]"
 
 function tokenize(expr) -- turn string expression into tokens
@@ -105,12 +150,26 @@ function tokenize(expr) -- turn string expression into tokens
     local prev = "#"
     while i <= length do -- tokenize
         local curr = expr:sub(i, i)
-        if curr:match(OPERATOR_PATTERN) then -- operator tokens
-            if (prev:match(OPERATOR_PATTERN) or i == 1) and curr == "-" then
+        local func = nil
+        local ln = nil
+        if i <= length - 2 then
+            func = expr:sub(i, i+2):lower()
+        end
+        if i <= length - 1 then
+            ln = expr:sub(i, i+1):lower()
+        end
+        if inKeys(curr, OPERATORS) then -- operator tokens
+            if (inKeys(prev, OPERATORS) or i == 1) and curr == "-" then
                 table.insert(tokens, {token="NEG"})
             else
                 table.insert(tokens, {token=OPERATORS[curr]})
             end
+        elseif inKeys(func, OPERATORS) then
+            table.insert(tokens, {token=OPERATORS[func]})
+            i = i + 2
+        elseif inKeys(ln, OPERATORS) then
+            table.insert(tokens, {token=OPERATORS[ln]})
+            i = i + 1
         elseif curr:match(DIGIT_PATTERN) then -- number tokens
             while (i + 1 <= length) and expr:sub(i + 1, i + 1):match(DIGIT_PATTERN) do
                 i = i + 1
@@ -197,7 +256,7 @@ end
 function Parser:factor() -- setup all nodes with down/value
     local tokenType = self.tokens[self.i].token
     local tokenValue = self.tokens[self.i].value
-    if tokenType == "NEG" then
+    if tokenType == "NEG" or tokenType:match("^[F]") then
         self.i = self.i + 1
         return {op=tokenType, down=self:factor()}
     elseif tokenType == "LPAR" then
@@ -222,7 +281,7 @@ local Evaluator = {}
 function Evaluator:new(o)
     o = o or {}
     if o.automations == nil then o.automations = {} end
-    if o.asDecimal == nil then o.asDecimal = true end
+    if o.answers == nil then o.answers = {} end
     setmetatable(o, self)
     self.__index = self
     return o
@@ -235,16 +294,32 @@ function Evaluator:evalNode(node, noteGroup, blick) -- Evaluate a node
         return node.value
     elseif node.op == "PARAM" then
         if not inKeys(node.value, self.automations) then
-            self.automations[node.value] = noteGroup:getParameter("vocalMode_"..node.value)
+            self.automations[node.value] = readParameter(noteGroup, node.value)
         end
         local value = self.automations[node.value]:get(blick)
-        if self.asDecimal then
+        if self.answers.asDecimal and not PARAMS[node.value] then
             return 0.01 * value
+        elseif self.answers.asSemitones and node.value == "pitchDelta" then
+            return 0.01 * value
+        elseif self.answers.asAmp and node.value == "loudness" then
+            return math.pow(10.0, 0.05 * value)
         else
             return value
         end
     elseif node.op == "NEG" then
-        return -1 * self:evalNode(node.down, noteGroup, blick)
+        return -self:evalNode(node.down, noteGroup, blick)
+    elseif node.op == "FPOS" then
+        return math.max(self:evalNode(node.down, noteGroup, blick), 0)
+    elseif node.op == "FNEG" then
+        return -math.min(self:evalNode(node.down, noteGroup, blick), 0)
+    elseif node.op == "FABS" then
+        return math.abs(self:evalNode(node.down, noteGroup, blick))
+    elseif node.op == "FLOG" then
+        return math.log10(self:evalNode(node.down, noteGroup, blick))
+    elseif node.op == "FLN" then
+        return math.log(self:evalNode(node.down, noteGroup, blick))
+    elseif node.op == "FEXP" then
+        return math.exp(self:evalNode(node.down, noteGroup, blick))
     elseif node.op == "EXP" then
         return math.pow(self:evalNode(node.left, noteGroup, blick), self:evalNode(node.right, noteGroup, blick))
     elseif node.op == "MUL" then
@@ -258,26 +333,68 @@ function Evaluator:evalNode(node, noteGroup, blick) -- Evaluate a node
     end
 end
 
-function Evaluator:eval(noteGroup, blick) -- Evaluate from root
+function Evaluator:eval(param, noteGroup, blick) -- Evaluate from root
     local result = self:evalNode(self.root, noteGroup, blick)
-    if self.asDecimal then
+    if self.answers.asDecimal and not PARAMS[param] then
         return result * 100
+    elseif self.answers.asSemitones and param == "pitchDelta" then
+        return result * 100
+    elseif self.answers.asAmp and node.value == "loudness" then
+        return 20 * math.log10(result)
     else
         return result
     end
 end
 
-function debugMessage(message)
+function readParameter(noteGroup, param) -- read parameter but in a slay way
+    if PARAMS[param] then
+        return noteGroup:getParameter(param)
+    end
+    return noteGroup:getParameter("vocalMode_"..param)
+end
+
+function messageBox(message) -- quick message box
     SV:showMessageBox(SCRIPT_TITLE, message)
+end
+
+function toboolean(str)
+    if str == nil then return false end
+    return str:lower() == "true"
+end
+
+function dumpConfig(file, answers)
+    local f = io.open(file, "w")
+    if f then
+        f:write(dump(answers))
+        f:close()
+    end
+end
+
+function loadConfig(file)
+    local f, err = io.open(file, "r")
+    if f then
+        local config = load("return "..f:read("*a"))()
+        local widgets = {}
+        for _, v in ipairs(inputForm.widgets) do
+            widgets[v.name] = v
+        end
+        for k, v in pairs(config) do
+            widgets[k].default = v
+        end
+    end
 end
 
 function main()
     local currNoteGroup = SV:getMainEditor():getCurrentGroup():getTarget() -- get current group
+    local configFile = SV:getProject():getFileName():gsub("svp$", "PCAT.cfg")
+    loadConfig(configFile)
+
     local result = SV:showCustomDialog(inputForm) -- show dialog
 
     if result.status then -- if success
+        dumpConfig(configFile, result.answers)
         -- get target automation
-        local dstAuto = currNoteGroup:getParameter("vocalMode_"..result.answers.dst)
+        local dstAuto = readParameter(currNoteGroup, result.answers.dst)
         -- make temp automation and clear
         local tempAuto = dstAuto:clone()
         tempAuto:removeAll()
@@ -286,24 +403,41 @@ function main()
         local automations = {}
         local evalBlicks = {}
         for auto in result.answers.expr:gmatch(PARAMETER_PATTERN.."+") do
-            local currAuto = currNoteGroup:getParameter("vocalMode_"..auto)
-            automations[auto] = curr_auto
+            if not OPERATORS[auto] then
+                local currAuto = readParameter(currNoteGroup, auto)
+                automations[auto] = currAuto
 
-            for _, point in ipairs(currAuto:getAllPoints()) do
-                table.insert(evalBlicks, point[1])
+                local points = currAuto:getAllPoints()
+                if result.answers.sampleEvenly then
+                    if #evalBlicks == 0 then evalBlicks = {math.huge, -math.huge} end
+                    evalBlicks[1] = math.min(evalBlicks[1], points[1][1])
+                    evalBlicks[2] = math.max(evalBlicks[2], points[#points][1])
+                else
+                    for _, point in ipairs(points) do
+                        table.insert(evalBlicks, point[1])
+                    end
+                end
             end
         end
-        table.sort(evalBlicks)
+        if result.answers.sampleEvenly then
+            local blicks = {evalBlicks[1]}
+            while blicks[#blicks] <= evalBlicks[2] do
+                table.insert(blicks, blicks[#blicks] + SV.QUARTER / result.answers.divisions)
+            end
+            evalBlicks = blicks
+        else
+            table.sort(evalBlicks)
+        end
 
         -- interpret mathematical expression
         local tokens = tokenize(result.answers.expr)
         local parser = Parser:new{tokens=tokens}
         local ast = parser:parse()
-        local expr = Evaluator:new{root=ast, automations=automations, asDecimal=result.answers.asDecimal}
+        local expr = Evaluator:new{root=ast, automations=automations, answers=result.answers}
 
         -- calculate expression for all blicks required and add points to target automation
         for _, blick in ipairs(evalBlicks) do
-            local value = expr:eval(currNoteGroup, blick)
+            local value = expr:eval(result.answers.dst, currNoteGroup, blick)
             tempAuto:add(blick, value)
         end
 
