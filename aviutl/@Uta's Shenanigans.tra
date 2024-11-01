@@ -378,7 +378,7 @@ return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx + 1, 0) * amt
 @Sinc
 --param: 5
 function sinc(x, k)
-	local a = math.pi * (2 * k * x - 1)
+	local a = 2 * math.pi * k * x
 	if a == 0 then
 		return 1
 	else
@@ -387,5 +387,35 @@ function sinc(x, k)
 end
 k = obj.getpoint("param")
 idx, rat = math.modf(obj.getpoint("index"))
-amt = sinc(rat, k) * (1 - rat) + math.pow(rat, 1 / (k * k))
+amt = 1 - sinc(rat, k)
 return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx + 1, 0) * amt
+
+@Exponential Falloff
+--speed:0,0
+--param:50
+function exp01(x, k)
+    return math.exp(-k * x) * (1 - x)
+end
+k = obj.getpoint("param") / 10
+idx, rat = math.modf(obj.getpoint("index"))
+amt = 1
+if obj.getpoint("accelerate") and obj.getpoint("decelerate") then
+    amt = ((1 - exp01(rat, k)) + exp01(1 - rat, k)) / 2
+elseif obj.getpoint("decelerate") then
+    amt = 1 - exp01(rat, k)
+elseif obj.getpoint("accelerate") then
+    amt = exp01(1 - rat, k)
+else
+    rat = 2 * rat - 1
+    if rat > 0 then
+        amt = 1 / (1 + exp01(rat, k+1))
+    else
+        amt = 1 - 1 / (1 + exp01(-rat, k+1))
+    end
+end
+return obj.getpoint(idx, 0) * (1 - amt) + obj.getpoint(idx + 1, 0) * amt
+
+@Snappy Random
+--twopoint
+--param:12
+return obj.rand(obj.getpoint(0, 0), obj.getpoint(1, 0), math.floor(obj.getpoint("time") * obj.getpoint("param")), 0)

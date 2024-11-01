@@ -682,3 +682,90 @@ if (isStart == 1 and isblinkStart and blinkStart == obj.track2) or (isEnd == 1 a
 else
 	obj.alpha = 1
 end
+
+@Change 2D Rotation Anchor
+--track0:X%,0,100,50,0.01
+--track1:Y%,0,100,50,0.01
+--check0:Show Anchor,0
+x = obj.w * obj.track0 / 100
+y = obj.h * obj.track1 / 100
+x = x - obj.w / 2
+y = y - obj.h / 2
+a = math.rad(obj.rz)
+sin_a = math.sin(a)
+cos_a = math.cos(a)
+rot_x = x * cos_a - y * sin_a
+rot_y = x * sin_a + y * cos_a
+obj.ox = x - rot_x
+obj.oy = y - rot_y
+if obj.check0 then
+    obj.draw()
+    obj.load("figure", "Circle", 0x00ff00, 20, 20)
+    obj.draw(x, y, 0, 1, 0.5)
+end
+
+@TA-Controllable Standard Intro
+--track0:Progress%,0,100,0,0.01
+--track1:Duration,0,5,0.3,0.01
+--track2:Zoom%,0,1000,100
+--dialog:Fade/chk,fade=0;X,xoff=0;Y,yoff=-128;Z,zoff=0;RotX,rx=0;RotY,ry=0;RotZ,rz=0;Accel[1-5],accel=2;
+dur = obj.track1
+zoom = obj.track2/100
+
+function sign(x)
+    if x > 0 then
+        return 1
+    elseif x < 0 then
+        return -1
+    end
+    return 0
+end
+
+function progress(t, n)
+    return obj.num * obj.getvalue(0, t) / 100 - n
+end
+
+function bisection(n, lo, hi)
+    local l = lo
+    local h = hi
+    local c = (l + h) / 2
+    for i = 1, 1024 do
+        c = (l + h) / 2
+        local fc = progress(c, n)
+        local fl = progress(l, n)
+        if fc == 0 or (h - l) / 2 < 0.0000001 then
+            return c
+        end
+        
+        if sign(fc) == sign(fl) then
+            l = c
+        else
+            h = c
+        end
+    end
+    return c
+end
+
+appear_time = bisection(obj.index, 0, obj.totaltime)
+if dur == 0 then
+    if obj.time > appear_time then
+        obj.alpha = 1
+    else
+        obj.alpha = 0
+    end
+else
+    if obj.time < appear_time then
+        obj.alpha = 0
+    else
+        local amt = (appear_time - obj.time) / dur + 1
+        amt = math.min(math.max(amt, 0), 1)^accel
+        if fade == 1 then obj.alpha = 1 - amt end
+        obj.ox = obj.ox + xoff * amt
+        obj.oy = obj.oy + yoff * amt
+        obj.oz = obj.oz + zoff * amt
+        obj.zoom = obj.zoom * (1 - amt) + zoom * amt
+        obj.rx = obj.rx + rx * amt
+        obj.ry = obj.ry + ry * amt
+        obj.rz = obj.rz + rz * amt
+    end
+end

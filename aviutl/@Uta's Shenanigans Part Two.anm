@@ -47,3 +47,66 @@ if obj.check0 then
 	obj.ry = ry
 	obj.rz = rz
 end
+
+@TA-Unified Scale
+--track0:Zoom%,0,400,100
+--track1:X,0,400,100
+--track2:Y,0,400,100
+obj.ox = obj.ox * (obj.track0 / 100) * (obj.track1 / 100)
+obj.oy = obj.oy * (obj.track0 / 100) * (obj.track2 / 100)
+obj.effect("Zoom%", "Zoom%", obj.track0, "X", obj.track1, "Y", obj.track2)
+
+@TA-Per Object Delay
+--track0:Delay (sec),0,10,0.05,0.01
+--track1:Fade (sec),0,10,0,0.01
+--check0:Hide delayed objects,1
+
+function clamp(x, l, h)
+    if x < l then
+        return l
+    elseif x > h then
+        return h
+    end
+    return x
+end
+
+currX = obj.getvalue("x")
+currY = obj.getvalue("y")
+currZ = obj.getvalue("z")
+currZoom = obj.getvalue("zoom") / 100
+currAlpha = obj.getvalue("alpha")
+currAspect = obj.getvalue("aspect")
+currRX = obj.getvalue("rx")
+currRY = obj.getvalue("ry")
+currRZ = obj.getvalue("rz")
+
+debug_print(obj.zoom)
+
+delayTime = clamp(obj.time - obj.track0 * obj.index, 0, obj.totaltime)
+delayX = obj.getvalue("x", delayTime)
+delayY = obj.getvalue("y", delayTime)
+delayZ = obj.getvalue("z", delayTime)
+delayZoom = obj.getvalue("zoom", delayTime) / 100
+delayAlpha = obj.getvalue("alpha", delayTime)
+delayAspect = obj.getvalue("aspect", delayTime)
+delayRX = obj.getvalue("rx", delayTime)
+delayRY = obj.getvalue("ry", delayTime)
+delayRZ = obj.getvalue("rz", delayTime)
+
+obj.ox = obj.ox + delayX - currX
+obj.oy = obj.oy + delayY - currY
+obj.oz = obj.oz + delayZ - currZ
+obj.zoom = delayZoom / (currZoom + 1e-16)
+obj.alpha = delayAlpha / (currAlpha + 1e-16)
+obj.aspect = obj.aspect + delayAspect - currAspect
+obj.rx = obj.rx + delayRX - currRX
+obj.ry = obj.ry + delayRY - currRY
+obj.rz = obj.rz + delayRZ - currRZ
+
+if obj.check0 then
+    if obj.track1 == 0 then
+        obj.alpha = (delayTime == 0) and 0 or obj.alpha
+    else
+        obj.alpha = obj.alpha * clamp(delayTime / obj.track1, 0, 1)
+    end
+end
