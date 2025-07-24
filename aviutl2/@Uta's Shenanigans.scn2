@@ -1,0 +1,54 @@
+@[SceneChange]Shake
+--track@amp:Amplitude,0,2000,400,0.01
+--track@blurStrength:BlurStrength,0,500,0,1
+--track@maxBright:MaxBrightness,100,200,200,0.01
+--check@shift:ColorShift,1
+--track@sgap:ShiftSize,0,2000,20,0.1
+--select@stype:ShiftType=4,RedGreenA=0,RedBlueA=1,GreenBlueA=2,RedGreenB=3,RedBlueB=4,GreenBlueB=5
+--check@firstframe:UseFirstFrame,1
+--value@itvl:FrameInterval,1
+--value@seed:Seed,1234
+function lerp(a, b, t)
+  return a * (1 - t) + b * t
+end
+
+shiftTypes = {"赤緑A", "赤青A", "緑青A", "赤緑B", "赤青B", "緑青B"}
+
+t = obj.getvalue("scenechange") * 2
+amp = amp / 2
+interval = math.max(1, itvl)
+if t > 1 then
+  t = 2 - t
+  obj.copybuffer("tmp", "frm")
+elseif firstframe == 0 then
+  obj.copybuffer("tmp", "frm")
+else
+  obj.copybuffer("tmp", "obj")
+end
+t = t * t * (3 - 2 * t)
+obj.load("figure", "背景", 0)
+obj.draw()
+
+obj.load("tempbuffer")
+
+amt = (obj.frame % interval) / interval
+amt = amt * amt * (3 - 2 * amt)
+xoff1 = obj.rand(-amp, amp, seed, math.floor(obj.frame / interval))
+yoff1 = obj.rand(-amp, amp, seed + 1234, math.floor(obj.frame / interval))
+
+xoff2 = obj.rand(-amp, amp, seed, math.floor(obj.frame / interval) + 1)
+yoff2 = obj.rand(-amp, amp, seed + 1234, math.floor(obj.frame / interval) + 1)
+
+xoff = lerp(xoff1, xoff2, amt) * t * t
+yoff = lerp(yoff1, yoff2, amt) * t * t
+
+angle = math.deg(math.atan2(yoff2 - yoff1, xoff2 - xoff1) + math.pi * 0.5)
+
+if shift == 1 and sgap ~= 0 then
+  obj.effect("色ずれ", "ずれ幅", sgap * t, "角度", angle, "色ずれの種類", shiftTypes[stype + 1])
+end
+obj.effect("色調補正", "明るさ", lerp(100, maxBright, t * t * t * t))
+if blurStrength > 0 then
+  obj.effect("方向ブラー", "範囲", blurStrength * t * t, "角度", angle)
+end
+obj.draw(xoff, yoff)

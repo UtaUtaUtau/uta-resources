@@ -1,0 +1,1165 @@
+@[Shader]Chromatic Aberration
+--track@sep:Separation,-100,100,0,0.01
+--track@power:EdgePower,1,10,2.5,0.01
+--select@mode:Mode,RedBlue=0,RedGreen=1,GreenBlue=2
+--check@addEdge:AdditiveEdge,1
+--check@fixedSize:FixedSize,0
+--[[pixelshader@psmain:
+Texture2D frame : register(t0);
+SamplerState FrameSampler {
+    Filter = MIN_MAG_MIP_LINEAR;
+    AddressU = Clip;
+    AddressV = Clip;
+};
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float sep;
+    float power;
+    float modeF;
+    float addEdge;
+    float fixedSize;
+};
+
+float alpha(float2 pos, float2 displace) {
+    if (addEdge > 0.5) {
+        return frame.Sample(FrameSampler, pos.xy / resolution).w *
+               frame.Sample(FrameSampler, (pos.xy - displace) / resolution).w *
+               frame.Sample(FrameSampler, (pos.xy + displace) / resolution).w;
+    } else {
+        return saturate(frame.Sample(FrameSampler, pos.xy / resolution).w +
+               frame.Sample(FrameSampler, (pos.xy - displace) / resolution).w +
+               frame.Sample(FrameSampler, (pos.xy + displace) / resolution).w);
+    }
+}
+
+float4 psmain(float4 pos : SV_Position) : SV_Target {
+    float2 center = resolution * 0.5;
+    pos.xy -= abs(sep) * resolution / length(resolution) * (1 - fixedSize);
+    float dist = saturate(length(center - pos.xy) / length(center + abs(sep.xx)));
+    float2 displace = normalize(pos.xy - center) * pow(dist, power) * sep;
+    int mode = (int) modeF;
+    float2 uv = pos.xy / resolution;
+    switch(mode)
+    {
+        case 0:
+            return float4(
+                frame.Sample(FrameSampler, (pos.xy - displace) / resolution).x,
+                frame.Sample(FrameSampler, uv).y,
+                frame.Sample(FrameSampler, (pos.xy + displace) / resolution).z,
+                alpha(pos.xy, displace));
+        case 1:
+            return float4(
+                frame.Sample(FrameSampler, (pos.xy - displace) / resolution).x,
+                frame.Sample(FrameSampler, (pos.xy + displace) / resolution).y,
+                frame.Sample(FrameSampler, uv).z,
+                1);
+        case 2:
+            return float4(
+                frame.Sample(FrameSampler, uv).x,
+                frame.Sample(FrameSampler, (pos.xy - displace) / resolution).y,
+                frame.Sample(FrameSampler, (pos.xy + displace) / resolution).z,
+                1);
+        default:
+            return float4(
+                frame.Sample(FrameSampler, (pos.xy - displace) / resolution).x,
+                frame.Sample(FrameSampler, uv).y,
+                frame.Sample(FrameSampler, (pos.xy + displace) / resolution).z,
+                1);
+    }
+}
+]]
+
+scale = 1 + 2 * math.abs(sep) / math.sqrt(obj.w * obj.w + obj.h * obj.h) * (1 - fixedSize)
+obj.setoption("drawtarget", "tempbuffer", math.floor(obj.w * scale), math.floor(obj.h * scale))
+obj.pixelshader("psmain", "tempbuffer", "object", {obj.w, obj.h, sep, power, mode, addEdge, fixedSize})
+obj.copybuffer("object", "tempbuffer")
+
+@[Shader]Glitch
+--track@glitchChance:Glitch%,0,100,70,0.01
+--track@glitchDensity:GlitchDens,0,50,8,1
+--track@textureChance:Texture%,0,100,30,0.01
+--track@textureDensity:TextureDens,0,50,4,1
+--track@minBoxSize:MinBoxSize,0,4000,0,1
+--track@maxBoxSize:MaxBoxSize,0,4000,1000,1
+--track@horizontalBias:HorizBias,0,100,80,0.01
+--track@offsetStrength:Offset,0,1000,300,1
+--track@screenTearChance:ScreenTear%,0,100,10,0.01
+--track@channelDropChance:ChannelDrop%,0,100,5,0.01
+--track@hollowChance:Hollow%,0,100,5,0.01
+--track@colorShiftChance:ColorShift%,0,100,25,0.01
+--track@shiftSize:ShiftSize,0,100,10,1
+--track@rasterChance:Raster%,0,100,5,0.01
+--track@rasterSize:RasterSize,0,100,5,1
+--value@interval:FrameInterval,1
+--value@seed:Seed,1234
+--[[pixelshader@randomrects:
+Texture2D frame : register(t0);
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float densityF;
+    float minBoxSizeF;
+    float maxBoxSizeF;
+    float horizontalBias;
+    float offsetStrengthF;
+    float channelDropChance;
+    float hollowChance;
+    float colorShiftChance;
+    float shiftSize;
+    float rasterChance;
+    float rasterSize;
+    float seedF;
+};
+void pcg(inout uint v) {
+    uint state = v * 747796405u + 2891336453u;
+	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	v = (word >> 22u) ^ word;
+}
+double randDouble(inout uint state) {
+    static double eps = 1.0L / 0xffffffffu;
+    pcg(state);
+    return eps * state;
+}
+int randIntRange(uint range, inout uint state) {
+    pcg(state);
+    return int(state % range);
+}
+int2 randInt2Range(uint2 range, inout uint state) {
+    return int2(randIntRange(range.x, state), randIntRange(range.y, state));
+}
+int randIntUniform(int low, int high, inout uint state) {
+    return randIntRange(uint(high - low), state) + low;
+}
+int2 randInt2Uniform(int2 low, int2 high, inout uint state) {
+    return randInt2Range(uint2(high - low), state) + low;
+}
+float randFloat(inout uint state) {
+    return float(randDouble(state));
+}
+float bias(float x, float a) {
+    return x / ((1 / a - 2) * (1 - x) + 1);
+}
+int2 randInt2HorizontalBiasUniform(int2 low, int2 high, float horizBias, inout uint state) {
+    int2 wh = randInt2Uniform(low, high, state);
+    if (wh.y > wh.x) {
+        wh = wh.yx;
+        low = low.yx;
+        high = high.yx;
+    }
+    if (horizBias > 0.) {
+        float remapX = bias((wh.x - low.x) / float(high.x - low.x), lerp(0.5, 1, horizBias));
+        float remapY = bias((wh.y - low.y) / float(high.y - low.y), lerp(0.5, 0, horizBias));
+        wh.x = int(lerp(low.x, high.x, remapX));
+        wh.y = int(lerp(low.y, high.y, remapY));
+    }
+    return wh;
+}
+int4 randomRect(uint2 res, int2 boxSizes, float horizBias, inout uint state) {
+    int2 wh = randInt2HorizontalBiasUniform(boxSizes.xx, boxSizes.yy, horizBias, state) / 2u;
+    int2 center = randInt2Range(res, state);
+    return int4(center - wh, center + wh);
+}
+bool inRect(float2 pos, int4 rect) {
+    return (pos.x > rect.x && pos.x <= rect.z) && (pos.y > rect.y && pos.y <= rect.w);
+}
+float4 randomrects(float4 pos : SV_Position) : SV_Target {
+    static int offsetStrength = int(offsetStrengthF);
+    static int2 boxSize = int2(minBoxSizeF, maxBoxSizeF);
+    static int rasterS = int(rasterSize);
+    int2 intPos = int2(pos.xy);
+    float4 color = frame[intPos];
+    uint frameState = uint(seedF);
+    pcg(frameState);
+    uint scanlineState = frameState ^ (uint(pos.y) * 8424701u + 7039159u);
+    pcg(scanlineState);
+    int density = randIntRange(uint(densityF), frameState);
+    for (int i = 0; i < density; i++) {
+        int4 rect = randomRect(uint2(resolution.xy), boxSize, horizontalBias, frameState);
+        int2 offset = int2(randIntUniform(-offsetStrength, offsetStrength, frameState), 0);
+        
+        if (randFloat(frameState) < rasterChance) {
+            int2 raster = int2(randIntUniform(-rasterS, rasterS, scanlineState), 0);
+            intPos += raster;
+        }
+        
+        if (randFloat(frameState) < hollowChance) {
+            if (inRect(pos.xy - offset, rect)) color = float4(0, 0, 0, 0);
+        }
+        
+        if (inRect(intPos, rect)) {
+            float4 mixColor;
+            if (randFloat(frameState) < colorShiftChance) {
+                int2 shift = int2(shiftSize, 0);
+                float2 offsetColorR = frame[intPos + offset - shift].xw;
+                float2 offsetColorG = frame[intPos + offset].yw;
+                float2 offsetColorB = frame[intPos + offset + shift].zw;
+                mixColor = float4(
+                    offsetColorR.x,
+                    offsetColorG.x,
+                    offsetColorB.x,
+                    saturate(offsetColorR.y + offsetColorG.y + offsetColorB.y));
+            } else mixColor = frame[intPos + offset];
+            if (randFloat(frameState) < channelDropChance) {
+                int mode = randIntRange(6, frameState);
+                switch (mode)
+                {
+                    case 0:
+                        mixColor.x = 0;
+                        break;
+                    case 1:
+                        mixColor.y = 0;
+                        break;
+                    case 2:
+                        mixColor.z = 0;
+                        break;
+                    case 3:
+                        mixColor.xy = 0;
+                        break;
+                    case 4:
+                        mixColor.yz = 0;
+                        break;
+                    case 5:
+                        mixColor.xz = 0;
+                        break;
+                }
+            }
+            color.xyz = lerp(color.xyz, mixColor.xyz, mixColor.w);
+            color.w = max(color.w, mixColor.w);
+        }
+    }
+    return color;
+}
+]]
+--[[pixelshader@texturerects:
+Texture2D frame : register(t0);
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float densityF;
+    float minBoxSizeF;
+    float maxBoxSizeF;
+    float horizontalBias;
+    float rasterChance;
+    float rasterSize;
+    float seedF;
+};
+void pcg(inout uint v) {
+    uint state = v * 747796405u + 2891336453u;
+	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	v = (word >> 22u) ^ word;
+}
+double randDouble(inout uint state) {
+    static double eps = 1.0L / 0xffffffffu;
+    pcg(state);
+    return eps * state;
+}
+float randFloat(inout uint state) {
+    return float(randDouble(state));
+}
+int randIntRange(uint range, inout uint state) {
+    pcg(state);
+    return int(state % range);
+}
+int2 randInt2Range(uint2 range, inout uint state) {
+    return int2(randIntRange(range.x, state), randIntRange(range.y, state));
+}
+int randIntUniform(int low, int high, inout uint state) {
+    return randIntRange(uint(high - low), state) + low;
+}
+int2 randInt2Uniform(int2 low, int2 high, inout uint state) {
+    return randInt2Range(uint2(high - low), state) + low;
+}
+float bias(float x, float a) {
+    return x / ((1 / a - 2) * (1 - x) + 1);
+}
+int2 randInt2HorizontalBiasUniform(int2 low, int2 high, float horizBias, inout uint state) {
+    int2 wh = randInt2Uniform(low, high, state);
+    if (wh.y > wh.x) {
+        wh = wh.yx;
+        low = low.yx;
+        high = high.yx;
+    }
+    if (horizBias > 0.) {
+        float remapX = bias((wh.x - low.x) / float(high.x - low.x), lerp(0.5, 1, horizBias));
+        float remapY = bias((wh.y - low.y) / float(high.y - low.y), lerp(0.5, 0, horizBias));
+        wh.x = int(lerp(low.x, high.x, remapX));
+        wh.y = int(lerp(low.y, high.y, remapY));
+    }
+    return wh;
+}
+int4 randomRect(uint2 res, int2 boxSizes, float horizBias, inout uint state) {
+    int2 wh = randInt2HorizontalBiasUniform(boxSizes.xx, boxSizes.yy, horizBias, state) / 2u;
+    int2 center = randInt2Range(res, state);
+    return int4(center - wh, center + wh);
+}
+bool inRect(float2 pos, int4 rect) {
+    return (pos.x > rect.x && pos.x <= rect.z) && (pos.y > rect.y && pos.y <= rect.w);
+}
+float3 color8bit(int col) {
+    return float3(col & 1, (col >> 1) & 1, (col >> 2) & 1);
+}
+float4 checker(float2 pos, int4 rect, inout uint state) {
+    static float pi = 3.141592653;
+    float2 uv = (pos - rect.xy) / (rect.zw - rect.xy);
+    int2 reps = randInt2Uniform(1, int2(max(rect.zw / 100u, 4)), state);
+    float pattern = sin(reps.x * pi * uv.x) * sin(reps.y * pi * uv.y);
+    if (pattern > 0) {
+        return float4(1,1,1,1);
+    } else {
+        return float4(0,0,0,1);
+    }
+}
+float4 texturerects(float4 pos : SV_Position) : SV_Target {
+    static int2 boxSize = int2(minBoxSizeF, maxBoxSizeF);
+    static float2 zo = float2(1, 0);
+    static int rasterS = int(rasterSize);
+    float4 color = frame[int2(pos.xy)];
+    uint frameState = uint(seedF) * 2059327 + 2197759;
+    pcg(frameState);
+    
+    uint scanlineState = frameState ^ (uint(pos.y) * 8424701u + 7039159u);
+    pcg(scanlineState);
+    
+    uint pixelState = scanlineState ^ (uint(pos.x) * 1688543u + 9321679u);
+    pcg(pixelState);
+    
+    int density = randIntRange(uint(densityF), frameState);
+    
+    for (int i = 0; i < density; i++) {
+        int4 rect = randomRect(uint2(resolution.xy), boxSize, horizontalBias, frameState);
+        if (randFloat(frameState) < rasterChance) {
+            pos.xy += int2(randIntUniform(-rasterS, rasterS, scanlineState), 0);;
+        }
+        if (inRect(pos.xy, rect)) {
+            float4 mixColor = color;
+            float3 addColor = float3(0, 0, 0);
+            int mode = randIntRange(20, frameState);
+            if (mode < 8) {
+                addColor = color8bit(mode);
+            } else if (mode < 16) {
+                float noise = randFloat(pixelState);
+                if (noise > randFloat(frameState)) addColor = color8bit(mode);
+            } else {
+                mixColor = checker(pos.xy, rect, frameState);
+            }
+            float edgeFade = randFloat(frameState);
+            if (edgeFade < 0.2) {
+                mixColor.w *= smoothstep(rect.y, lerp(rect.y, rect.w, randFloat(frameState)), pos.y);
+            } else if (edgeFade < 0.4) {
+                mixColor.w *= smoothstep(rect.w, lerp(rect.w, rect.y, randFloat(frameState)), pos.y);
+            } else if (edgeFade < 0.6) {
+                mixColor.w *= smoothstep(rect.x, lerp(rect.x, rect.z, randFloat(frameState)), pos.x);
+            } else if (edgeFade < 0.8) {
+                mixColor.w *= smoothstep(rect.z, lerp(rect.z, rect.x, randFloat(frameState)), pos.x);
+            }
+            mixColor.xyz += addColor;
+            color.xyz = lerp(color.xyz, mixColor.xyz, mixColor.w);
+            color.w = max(color.w, mixColor.w);
+        }
+    }    
+    return color;
+}
+]]
+--[[pixelshader@screentear:
+Texture2D frame : register(t0);
+cbuffer constant0 : register(b0) {
+    float tearTop;
+    float tearY;
+    float tearOffset;
+};
+float4 screentear(float4 pos : SV_Position) : SV_Target {
+    float4 color = frame[int2(pos.xy)];
+    if (tearTop < 50) {
+        if (pos.y > tearY) {
+            color = frame[int2(pos.xy + float2(tearOffset, 0))];
+        }
+    } else {
+        if (pos.y < tearY) {
+            color = frame[int2(pos.xy + float2(tearOffset, 0))];
+        }
+    }
+    return color;
+}
+]]
+--[[pixelshader@colorshift:
+Texture2D frame : register(t0);
+cbuffer constant0 : register(b0) {
+    float shiftSize;
+}
+float4 colorshift(float4 pos : SV_Position) : SV_Target {
+    int2 shift = int2(shiftSize, 0);
+    float2 colorR = frame[pos.xy - shift].xw;
+    float2 colorG = frame[pos.xy].yw;
+    float2 colorB = frame[pos.xy + shift].zw;
+    return float4(
+        colorR.x,
+        colorG.x,
+        colorB.x,
+        saturate(colorR.y + colorG.y + colorB.y)
+    );
+}
+]]
+frame = math.floor(obj.frame / interval)
+
+if obj.rand(0, 100, seed, frame) < glitchChance then
+    if obj.rand(0, 100, seed + 3, frame) < textureChance then
+        obj.pixelshader("texturerects", "object", "object", {
+            obj.w, obj.h,
+            textureDensity,
+            minBoxSize, maxBoxSize,
+            horizontalBias / 100,
+            rasterChance / 100,
+            rasterSize,
+            seed + 4 + obj.layer + obj.frame
+        })
+    end
+    if obj.rand(0, 100, seed + 1, frame) < colorShiftChance then
+        obj.pixelshader("colorshift", "object", "object", {shiftSize})
+        shiftSize = 0
+    end
+    obj.pixelshader("randomrects", "object", "object", {
+        obj.w, obj.h,
+        glitchDensity,
+        minBoxSize, maxBoxSize,
+        horizontalBias / 100,
+        offsetStrength,
+        channelDropChance / 100,
+        hollowChance / 100,
+        colorShiftChance / 100,
+        shiftSize,
+        rasterChance / 100,
+        rasterSize,
+        seed + 2 + obj.layer + frame
+    })
+    if obj.rand(0, 100, seed + 5, frame) < screenTearChance then
+        obj.pixelshader("screentear", "object", "object", {
+            obj.rand(0, 100, seed + 6, frame),
+            obj.rand(0, obj.h, seed + 7, frame),
+            obj.rand(-offsetStrength, offsetStrength, seed + 8, frame) / 5
+        })
+    end
+end
+
+@[Shader]Pinch
+--track@strength:Strength,-100,100,0,0.01
+--track@mult:Multiplier,1,10,1,0.01
+--check@aggressive:Aggressive,0
+--[[pixelshader@psmain:
+Texture2D frame : register(t0);
+SamplerState FrameSampler {
+    Filter = MIN_MAG_MIP_LINEAR;
+    AddressU = Clip;
+    AddressV = Clip;
+};
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float strength;
+    float aggressive;
+};
+float4 psmain(float4 pos : SV_Position) : SV_Target {
+    float2 centeredPos = pos.xy - resolution / 2;
+    float norm = length(centeredPos);
+    if (aggressive > 0.5) norm *= norm;
+    norm /= length(resolution / 2);
+    norm += 1;
+    centeredPos *= pow(norm, -strength);
+    float2 uv = (centeredPos + resolution / 2) / resolution;
+    return frame.Sample(FrameSampler, uv);
+}
+]]
+
+obj.pixelshader("psmain", "object", "object", {obj.w, obj.h, strength * mult / 100, aggressive})
+
+@[Shader]Multiple Frame Thing
+--track@number:Number,1,100,1,1
+--[[pixelshader@psmain:
+Texture2D frame : register(t0);
+SamplerState FrameSampler {
+    Filter = MIN_MAG_MIP_LINEAR;
+    AddressU = Clip;
+    AddressV = Clip;
+};
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float number;
+};
+float4 psmain(float4 pos : SV_Position) : SV_Target {
+    float2 uv = pos.xy / resolution;
+    return frame.Sample(FrameSampler, frac(uv * number));
+}
+]]
+obj.pixelshader("psmain", "object", "object", {obj.w, obj.h, number})
+
+@[HeavyShader]PixelSort
+--track@baseLum:BaseLumi,0,100,50,0.001
+--track@rangeLum:RangeLumi,0,100,5,0.001
+--select@sortMode:SortMode,Luminance=0,Red=1,Green=2,Blue=3,Hue=4,Saturation=5,Average=6,Multiply=7,Min=8,Max=9,XOR=10
+--track@sortLengthLimit:LengthLimit,1,1024,256,1
+--check@horizontal:HorizontalSort,0
+--check@reverseSort:ReverseSort,0
+--check@highlight:HighlightSort,0
+--value@a:Disclaimer,"The GPU hates sorting. Use with caution."
+--[[computeshader@lumakey:
+RWTexture2D<half4> buffer : register(u0);
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float minLum;
+    float maxLum;
+    float sortLengthLimit;
+    float horizontal;
+};
+float luminance(half4 col) {
+    float3 lin = pow(abs(col.xyz), 0.454545);
+    return 0.2126 * lin.x + 0.7152 * lin.y +  0.0722 * lin.z;
+}
+[numthreads(1, 1, 1)]
+void lumakey(uint2 id : SV_DispatchThreadID) {
+    bool horiz = horizontal > 0.5;
+    uint res = (horiz) ? uint(resolution.x) : uint(resolution.y);
+    for (uint i = 0; i < res; i++) {
+        uint2 pos = (horiz) ? uint2(i, id.y) : uint2(id.x, i);
+        float luma = luminance(buffer[pos]);
+        if (luma >= minLum && luma <= maxLum) {
+            buffer[pos] = half4(1, 0, 0, 1);
+        } else {
+            buffer[pos] = half4(0, 0, 0, 1);
+        }
+    }
+    
+    uint j = 0;
+    while (j < res) {
+        uint2 pos = (horiz) ? uint2(j, id.y) : uint2(id.x, j);
+        if (buffer[pos].x == 1) {
+            uint2 start = pos;
+            uint len = 0;
+            do {
+                buffer[pos] = half4(0, 0, 0, 1);
+                len++;
+                j++;
+                pos = (horiz) ? uint2(j, id.y) : uint2(id.x, j);
+            } while(buffer[pos].x == 1 && len < uint(sortLengthLimit));
+            buffer[start] = half4(len, 0, 0, 1);
+            j--;
+        }
+        j++;
+    }
+}]]
+--[[computeshader@pixelsort:
+RWTexture2D<half4> buffer : register(u0);
+Texture2D<float4> key : register(t0);
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float minLum;
+    float maxLum;
+    float sortMode;
+    float reverse;
+    float highlight;
+    float horizontal;
+};
+float luminance(half4 col) {
+    float3 lin = pow(abs(col.xyz), 0.454545);
+    return 0.2126 * lin.x + 0.7152 * lin.y +  0.0722 * lin.z;
+}
+float3 hsl(float4 col) {
+    float cmax = max(col.x, max(col.y, col.z));
+    float cmin = min(col.x, min(col.y, col.z));
+    float delta = cmax - cmin;
+    float h;
+    if (delta == 0) {
+        h = 0;
+    } else if (cmax == col.x) {
+        h = 60 * (((col.y - col.z) / delta) % 6);
+    } else if (cmax == col.y) {
+        h = 60 * (2 + (col.z - col.x) / delta);
+    } else {
+        h = 6 * (4 + (col.x - col.y) / delta);
+    }
+    
+    float l = (cmax + cmin) / 2.;
+    
+    return float3(
+        h,
+        (delta == 0) ? 0 : delta / (1 - abs(2 * l - 1)),
+        l
+    );
+}
+float xorCol(float4 col) {
+    uint r = uint(col.x * 255);
+    uint g = uint(col.y * 255);
+    uint b = uint(col.z * 255);
+    return (r ^ g ^ b) / 255.0;
+}
+float sortComparator(float4 col) {
+    uint mode = uint(sortMode) % 11;
+    switch(mode) {
+        case 0:
+            return luminance(col);
+        case 1:
+            return col.x;
+        case 2:
+            return col.y;
+        case 3:
+            return col.z;
+        case 4:
+            return hsl(col).x / 360.;
+        case 5:
+            return hsl(col).y;
+        case 6:
+            return (col.x + col.y + col.z) / 3.;
+        case 7:
+            return col.x * col.y * col.z;
+        case 8:
+            return min(col.x, min(col.y, col.z));
+        case 9:
+            return max(col.x, max(col.y, col.z));
+        case 10:
+            return xorCol(col);
+    }
+}
+void sortRangeMin(uint2 start, uint len, bool horiz) {
+    for (uint i = 0; i < len - 1; i++) {
+        uint2 iOff = (horiz) ? uint2(i, 0) : uint2(0, i);
+        uint2 minOff = iOff;
+        for (uint j = i+1; j < len; j++) {
+            uint2 jOff = (horiz) ? uint2(j, 0) : uint2(0, j);
+            if (sortComparator(buffer[start + jOff]) < sortComparator(buffer[start + minOff])) {
+                if (horiz) minOff.x = j;
+                else minOff.y = j;
+            }
+        }
+        
+        if (max(minOff.x, minOff.y) != max(iOff.x, iOff.y)) {
+            half4 temp = buffer[start + iOff];
+            buffer[start + iOff] = buffer[start + minOff];
+            buffer[start + minOff] = temp;
+        }
+    }
+}
+void sortRangeMax(uint2 start, uint len, bool horiz) {
+    for (uint i = 0; i < len - 1; i++) {
+        uint2 iOff = (horiz) ? uint2(i, 0) : uint2(0, i);
+        uint2 minOff = iOff;
+        for (uint j = i+1; j < len; j++) {
+            uint2 jOff = (horiz) ? uint2(j, 0) : uint2(0, j);
+            if (sortComparator(buffer[start + jOff]) > sortComparator(buffer[start + minOff])) {
+                if (horiz) minOff.x = j;
+                else minOff.y = j;
+            }
+        }
+        
+        if (max(minOff.x, minOff.y) != max(iOff.x, iOff.y)) {
+            half4 temp = buffer[start + iOff];
+            buffer[start + iOff] = buffer[start + minOff];
+            buffer[start + minOff] = temp;
+        }
+    }
+}
+void highlightRange(uint2 start, uint len, bool horiz) {
+    for (uint i = 0; i < len - 1; i++) {
+        uint2 iOff = (horiz) ? uint2(i, 0) : uint2(0, i);
+        half4 color = buffer[start + iOff];
+        buffer[start + iOff] = half4(1 - color.xyz, color.a);
+    }
+}
+[numthreads(1, 1, 1)]
+void pixelsort(uint2 id : SV_DispatchThreadID) {
+    bool horiz = horizontal > 0.5;
+    uint res = (horiz) ? uint(resolution.x) : uint(resolution.y);
+    for (uint i = 0; i < res; i++) {
+        uint2 pos = (horiz) ? uint2(i, id.y) : uint2(id.x, i);
+        if (key[pos].x > 0) {
+            if (highlight < 0.5) {
+                if (reverse < 0.5) {
+                    sortRangeMin(pos, key[pos].x, horiz);
+                } else {
+                    sortRangeMax(pos, key[pos].x, horiz);
+                }
+            } else {
+                highlightRange(pos, key[pos].x, horiz);
+            }
+        }
+    }
+}]]
+base = baseLum / 100
+range = rangeLum / 100
+minLum = math.max(base - range, 0)
+maxLum = math.min(base + range, 1)
+obj.copybuffer("cache:key", "object")
+obj.copybuffer("cache:vals", "object")
+
+if horizontal == 0 then
+    obj.computeshader("lumakey", "cache:key", nil, {obj.w, obj.h, minLum, maxLum, sortLengthLimit, horizontal}, obj.w, 1)
+    obj.computeshader("pixelsort", "object", "cache:key", {obj.w, obj.h, minLum, maxLum, sortMode, reverseSort, highlight}, obj.w, 1)
+else
+    obj.computeshader("lumakey", "cache:key", nil, {obj.w, obj.h, minLum, maxLum, sortLengthLimit, horizontal}, 1, obj.h)
+    obj.computeshader("pixelsort", "object", "cache:key", {obj.w, obj.h, minLum, maxLum, sortMode, reverseSort, highlight, horizontal}, 1, obj.h)
+end
+
+@[Shader]SDF Thickness
+--track@thicknessOffset:ThicknessOffset,-100,100,0
+--track@edgeSmooth:EdgeSmoothness,1,16,2
+--track@quality:Quality,1,16,11,1
+--check@autoQuality:AutoQuality,0
+--check@visualize:VisualizeDistanceField,0
+--[[pixelshader@init:
+Texture2D<float4> buffer : register(t0);
+float4 init(float4 pos : SV_Position) : SV_Target {
+    uint2 xy = uint2(pos.xy);
+    float4 color = buffer[xy];
+    if (color.w > 0.5) {
+        return float4(xy, 1e6, 1e6);
+    } else {
+        return float4(1e6, 1e6, xy);
+    }
+}]]
+--[[computeshader@jumpflood:
+RWTexture2D<float4> buffer : register(u0);
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float passes;
+}
+float4 sample(int2 xy) {
+    static int2 res = uint2(resolution);
+    if (xy.x >= 0 && xy.x < res.x && xy.y >= 0 && xy.y < res.y) {
+        return buffer[uint2(xy)];
+    }
+    return float4(1e6, 1e6, 1e6, 1e6);
+}
+void jumpfloodPass(uint2 xy, uint step) {
+    float bestOutDist = 1e12;
+    float bestInDist = 1e12;
+    float4 best = float4(1e6, 1e6, 1e6, 1e6);
+    
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            int2 currCoord = xy + int2(x, y) * step;
+            float4 curr = sample(currCoord);
+            float2 diff;
+            float d;
+            diff = curr.xy - xy;
+            d = dot(diff, diff);
+            if (d < bestOutDist) {
+                bestOutDist = d;
+                best.xy = curr.xy;
+            }
+
+            diff = curr.zw - xy;
+            d = dot(diff, diff);
+            if (d < bestInDist) {
+                bestInDist = d;
+                best.zw = curr.zw;
+            }
+        }
+    }
+    buffer[xy] = best;
+}
+[numthreads(1, 1, 1)]
+void jumpflood(uint2 xy : SV_DispatchThreadID) {
+    jumpfloodPass(xy, 1);
+    for (uint level = 0; level <= uint(passes); level++) {
+        uint step = uint(exp2(passes - level) + 0.5);
+        jumpfloodPass(xy, step);
+    }
+}]]
+--[[pixelshader@render:
+Texture2D<float4> data : register(t0);
+cbuffer constant0 : register(b0) {
+    float thicknessOffset;
+    float smooth;
+    float visualize;
+}
+float4 render(float4 pos : SV_Position) : SV_Target {
+    uint2 xy = uint2(pos.xy);
+    float4 distData = data[xy];
+    float d = length(distData.xy - pos.xy) - length(distData.zw - pos.xy);
+    if (visualize > 0.5) {
+        float3 col = (d > 0) ? float3(0.85, 0.55, 0.15) : float3(0.55, 0.30, 0.85);
+        col *= 1 - exp(-0.05 * abs(d));
+        col *= 0.8 + 0.2 * cos(0.5 * d);
+        col = lerp(col, 1, smoothstep(4, 2, abs(d)));
+        col = lerp(col, float3(0.25, 0.86, 0.38), smoothstep(4, 2, abs(d - thicknessOffset)));
+        return float4(col, 1);
+    } else {
+        float a = smoothstep(thicknessOffset + smooth / 2, thicknessOffset - smooth / 2, d);
+        return a.xxxx;
+    }
+}]]
+if autoQuality == 1 then
+    quality = math.ceil(math.log(math.min(obj.w, obj.h)) / math.log(2))
+    debug_print(quality)
+end
+obj.pixelshader("init", "object", "object")
+obj.computeshader("jumpflood", "object", nil, {obj.w, obj.h, quality}, obj.w, obj.h)
+obj.pixelshader("render", "object", "object", {thicknessOffset, edgeSmooth, visualize})
+
+@[Shader]Halftone
+--track@dotSize:DotSize,2,1000,4,0.01
+--track@angle:Angle,0,360,54.736,0.001
+--select@dotType:DotType,Circle=0,Square=1,Diamond=2,VerticalLine=3,HorizontalLine=4,DiagonalLine=5,DiagonalLine2=6
+--color@dotColor:DotColor,0xffffff
+--check@colorFromSource:ColorFromSource,0
+--check@resize:ResizeWithMetric,1
+--select@metric:Metric,Luminance=0,Red=1,Green=2,Blue=3,Cyan=4,Magenta=5,Yellow=6,Key(CMYK)=7
+--check@sampleCenter:SampleCenter,1
+--track@sampleSize:SampleSize,0,5,0,1
+--check@invert:InvertMetric,0
+--track@centerX:centerX,0,100,50,0.001
+--track@centerY:centerY,0,100,50,0.001
+--check@background:Background,0
+--color@bgColor:BackgroundColor,0xffffff
+--check@cmykMode:CMYKMode,0
+--[[pixelshader@halftone:
+Texture2D<float4> buffer : register(t0);
+cbuffer constant0 : register(b0) {
+    float2 center;
+    float size;
+    float angle;
+    float type;
+    float3 dotColor;
+    float colorFromSource;
+    float3 bgColor;
+    float background;
+    float sampleCenter;
+    float sampleSize;
+    float metric;
+    float resize;
+    float invert;
+    float cmykMode;
+};
+float2 rotate(float2 xy, float angle) {
+    float s = sin(angle);
+    float c = cos(angle);
+    float2x2 rot = { c, -s, s, c };
+    return mul(xy, rot);
+}
+float sdCircle(float2 uv, float r) {
+    return length(uv - 0.5) - r;
+}
+float sdBox(float2 uv, float2 b) {
+    float2 d = abs(uv - 0.5) - b;
+    return length(max(d, 0)) + min(max(d.x, d.y), 0);
+}
+float sdSquare(float2 uv, float s) {
+    return sdBox(uv, s.xx);
+}
+float sdDiamond(float2 uv, float s) {
+    return sdSquare(rotate(uv - 0.5, 0.785398) + 0.5, s);
+}
+float sdVertLine(float2 uv, float r) {
+    return abs(uv.x - 0.5) - r;
+}
+float sdHorizLine(float2 uv, float r) {
+    return abs(uv.y - 0.5) - r;
+}
+float sdDiagLine(float2 uv, float r, bool alt) {
+    return sdVertLine(rotate(uv - 0.5, (alt) ? -0.785398 : 0.785398) + 0.5, r);
+}
+float drawDot(float2 uv, float metric, float delta) {
+    float d;
+    uint t = uint(type) % 7;
+    switch(t)
+    {
+        case 0:
+            d = sdCircle(uv, metric / sqrt(2));
+            break;
+        case 1:
+            d = sdSquare(uv, metric * 0.5);
+            break;
+        case 2:
+            d = sdDiamond(uv, metric * 0.5 * sqrt(2));
+            break;
+        case 3:
+            d = sdVertLine(uv, metric * 0.5);
+            break;
+        case 4:
+            d = sdHorizLine(uv, metric * 0.5);
+            break;
+        case 5:
+            d = sdDiagLine(uv, metric / sqrt(2), false);
+            break;
+        case 6:
+            d = sdDiagLine(uv, metric / sqrt(2), true);
+            break;
+    }
+    return smoothstep(delta, -delta, d);
+}
+float4 cmyk(float3 col) {
+    float w = max(col.x, max(col.y, col.z));
+    return float4((w - col.xyz) / w, 1 - w);
+}
+float3 rgb(float4 col) {
+    return (1 - col.xyz) * (1 - col.w);
+}
+float getMetric(uint2 pos, uint met) {
+    float3 col = buffer[pos].xyz;
+    float res = 0;
+    met = met % 8;
+    switch(met)
+    {
+        case 0:
+            col = pow(abs(col), 1 / 2.2);
+            res = 0.2126 * col.x + 0.7152 * col.y +  0.0722 * col.z;
+            break;
+        case 1:
+            res = col.x;
+            break;
+        case 2:
+            res = col.y;
+            break;
+        case 3:
+            res = col.z;
+            break;
+        case 4:
+            res = cmyk(col).x;
+            break;
+        case 5:
+            res = cmyk(col).y;
+            break;
+        case 6:
+            res = cmyk(col).z;
+            break;
+        case 7:
+            res = cmyk(col).w;
+            break;
+    }
+    if (invert) return 1 - res;
+    return res;
+}
+float sampleMetric(uint2 pos, uint met) {
+    if (sampleCenter > 0.5 && sampleSize >= 1) {
+        int size = int(sampleSize);
+        float result = 0;
+        float kernelSize = 2 * sampleSize + 1;
+        for (int y = -size; y <= size; y++) {
+            for (int x = -size; x <= size; x++) {
+                result += getMetric(pos + int2(x, y), met);
+            }
+        }
+        return result / (kernelSize * kernelSize);
+    } else {
+        return getMetric(pos, met);
+    }
+}
+float3 sample(uint2 pos) {
+    if (sampleCenter > 0.5 && sampleSize >= 1) {
+        int size = int(sampleSize);
+        float3 result = 0;
+        float kernelSize = 2 * sampleSize + 1;
+        for (int y = -size; y <= size; y++) {
+            for (int x = -size; x <= size; x++) {
+                result += buffer[pos + int2(x, y)].xyz;
+            }
+        }
+        return result / (kernelSize * kernelSize);
+    } else {
+        return buffer[pos].xyz;
+    }
+}
+float4 drawDots(float4 position, float2 cntr, float angl, float3 dotCol, uint met, bool fromSource) {
+    uint2 samplePos = (sampleCenter < 0.5) ?
+        uint2(position.xy) :
+        uint2(rotate(size * floor(rotate(position.xy - cntr, angl) / size + 0.5), -angl) + cntr);
+    float2 uv = frac(rotate(position.xy - cntr, angl) / size + 0.5);
+    float m = (resize < 0.5) ? 0.5 : sampleMetric(samplePos, met);
+    float alpha = drawDot(uv, m, 1 / size);
+    float3 col = (fromSource) ? sample(samplePos) : dotCol;
+    return float4(col, alpha);
+}
+float4 halftone(float4 position : SV_Position) : SV_Target {
+    float4 color = float4(dotColor, 1);
+    if (cmykMode < 0.5) {
+        color = drawDots(position, center, angle, dotColor, uint(metric), colorFromSource > 0.5);
+        if (background) {
+            color.xyz = lerp(bgColor, color.xyz, color.w);
+            color.w = 1;
+        } else {
+            color.xyz *= color.w;
+        }
+    } else {
+        color.xyz = 1;
+        float c = drawDots(position, center, radians(15) + angle, 1, 4, false).w;
+        float m = drawDots(position, center, radians(75) + angle, 1, 5, false).w;
+        float y = drawDots(position, center, angle, 1, 6, false).w;
+        float k = drawDots(position, center, radians(45) + angle, 1, 7, false).w;
+        float4 cmykDots = float4(rgb(float4(c, m, y, k)), saturate(c+m+y+k));
+        color.xyz = lerp(color.xyz, cmykDots.xyz, cmykDots.w);
+    }
+    return color;
+}]]
+function col2vec(col)
+    local r, g, b = RGB(col)
+    return r / 255, g / 255, b / 255
+end
+dotR, dotG, dotB = col2vec(dotColor)
+bgR, bgG, bgB = col2vec(bgColor)
+obj.pixelshader("halftone", "object", "object", {
+    obj.w * centerX / 100, obj.h * centerY / 100,
+    dotSize,
+    math.rad(angle),
+    dotType,
+    dotR, dotG, dotB,
+    colorFromSource,
+    bgR, bgG, bgB,
+    background,
+    sampleCenter,
+    sampleSize,
+    metric,
+    resize,
+    invert,
+    cmykMode
+})
+
+@[Shader]Noise Displacement
+--select@displaceType:TransformType,Move=0,Zoom=1,Rotate=2
+--track@strength:Strength,0,1000,10,0.01
+--track@scale:Scale,1,4000,100,0.001
+--track@ox:OffsetX,-4000,4000,0,0.01
+--track@oy:OffsetY,-4000,4000,0,0.01
+--track@complexity:Complexity,1,16,0.01
+--track@evolSpeed:EvolutionSpeed,0,100,0,0.001
+--value@interval:FrameInterval,1
+--value@seed:Seed,1234
+--check@showNoise:ShowNoise,0
+--check@fixedSize:FixedSize,1
+--track@pinSize:PinSize,1,1000,100,0.001
+--check@pinTop:PinTop,1
+--check@pinBottom:PinBottom,1
+--check@pinLeft:PinLeft,1
+--check@pinRight:PinRight,1
+--[[pixelshader@displace:
+Texture2D buffer : register(t0);
+SamplerState BufferSampler {
+    Filter = MIN_MAG_MIP_LINEAR;
+    AddressU = Clip;
+    AddressV = Clip;
+};
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float strength;
+    float scale;
+    float2 offset;
+    float complexity;
+    float evolution;
+    float4 pinEdge;
+    float pinSize;
+    float modeF;
+    float fixedSize;
+    float visualize;
+    float seedF;
+};
+void pcg(inout uint v) {
+    uint state = v * 747796405u + 2891336453u;
+	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	v = (word >> 22u) ^ word;
+}
+double randDouble(inout uint state) {
+    static double eps = 1.0L / 0xffffffffu;
+    pcg(state);
+    return eps * state;
+}
+float3 hash(int3 pos) {
+    uint state = uint((pos.x * 1813001 + 9434981) ^ (pos.y * 2461031 + 6461803) ^ (pos.z * 1481071 + 2542483)) + uint(seedF);
+    pcg(state);
+    return normalize(float3(randDouble(state), randDouble(state), randDouble(state)) * 2 - 1);
+}
+float noise(float3 x) {
+    float3 p = floor(x);
+    float3 w = frac(x);
+    
+    float3 u = w*w*w*(w*(w*6.0-15.0)+10.0);
+
+    float3 ga = hash( p+float3(0.0,0.0,0.0) );
+    float3 gb = hash( p+float3(1.0,0.0,0.0) );
+    float3 gc = hash( p+float3(0.0,1.0,0.0) );
+    float3 gd = hash( p+float3(1.0,1.0,0.0) );
+    float3 ge = hash( p+float3(0.0,0.0,1.0) );
+    float3 gf = hash( p+float3(1.0,0.0,1.0) );
+    float3 gg = hash( p+float3(0.0,1.0,1.0) );
+    float3 gh = hash( p+float3(1.0,1.0,1.0) );
+    
+    float va = dot( ga, w-float3(0.0,0.0,0.0) );
+    float vb = dot( gb, w-float3(1.0,0.0,0.0) );
+    float vc = dot( gc, w-float3(0.0,1.0,0.0) );
+    float vd = dot( gd, w-float3(1.0,1.0,0.0) );
+    float ve = dot( ge, w-float3(0.0,0.0,1.0) );
+    float vf = dot( gf, w-float3(1.0,0.0,1.0) );
+    float vg = dot( gg, w-float3(0.0,1.0,1.0) );
+    float vh = dot( gh, w-float3(1.0,1.0,1.0) );
+	
+    return va + 
+           u.x*(vb-va) + 
+           u.y*(vc-va) + 
+           u.z*(ve-va) + 
+           u.x*u.y*(va-vb-vc+vd) + 
+           u.y*u.z*(va-vc-ve+vg) + 
+           u.z*u.x*(va-vb-ve+vf) + 
+           u.x*u.y*u.z*(-va+vb+vc-vd+ve-vf-vg+vh);
+}
+float fbm(float3 x) {
+    float f = 1;
+    float a = 1;
+    float t = 0;
+    uint octaves = uint(floor(complexity));
+    float finalOct = frac(complexity);
+    for (uint i = 0; i < octaves; i++) {
+        t += a * noise(f * x);
+        f *= 2.0;
+        a *= 0.5;
+    }
+    t += a * noise(f * x) * finalOct;
+    return t;
+}
+float2 rotate(float2 xy, float angle) {
+    float s = sin(angle);
+    float c = cos(angle);
+    float2x2 rot = { c, -s, s, c };
+    return mul(xy, rot);
+}
+float4 displace(float4 pos : SV_Position) : SV_Target {
+    float2 xy = pos.xy;
+    if (fixedSize < 0.5) xy -= strength;
+    float3 xyz = float3(xy / scale, evolution);
+    float t = fbm(xyz);
+    if (pinEdge.x > 0.5) t *= smoothstep(0, 1, xy.y / pinSize);
+    if (pinEdge.y > 0.5) t *= smoothstep(0, 1, (resolution.y - xy.y) / pinSize);
+    if (pinEdge.z > 0.5) t *= smoothstep(0, 1, xy.x / pinSize);
+    if (pinEdge.w > 0.5) t *= smoothstep(0, 1, (resolution.x - xy.x) / pinSize);
+    
+    if (visualize) return float4(t.xxx * 0.5 + 0.5, 1);
+    
+    uint mode = uint(modeF);
+    switch (mode)
+    {
+        case 0:
+            float a = fbm(float3(xyz.xy, evolution + 100)) * 3.141592653;
+            xy += strength * t * float2(cos(a), sin(a));
+            break;
+        case 1:
+            xy -= resolution * 0.5;
+            xy *= exp2(t * strength * 0.005);
+            xy += resolution * 0.5;
+            break;
+        case 2:
+            xy -= resolution * 0.5;
+            xy = rotate(xy, t * strength * 0.005);
+            xy += resolution * 0.5;
+            break;
+    }
+    float2 uv = xy / resolution;
+    return buffer.Sample(BufferSampler, uv);
+}]]
+
+obj.setoption("drawtarget", "tempbuffer", obj.w + strength * 2 * (1 - fixedSize), obj.h + strength * 2 * (1 - fixedSize))
+obj.pixelshader("displace", "tempbuffer", "object", {
+    obj.w, obj.h,
+    strength,
+    scale,
+    ox, oy,
+    complexity,
+    math.floor(obj.frame / interval) * evolSpeed / obj.framerate,
+    pinTop, pinBottom, pinLeft, pinRight,
+    pinSize,
+    displaceType,
+    fixedSize,
+    showNoise,
+    seed
+})
+obj.copybuffer("object", "tempbuffer")

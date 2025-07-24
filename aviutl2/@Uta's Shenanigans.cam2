@@ -1,0 +1,34 @@
+@[Motion]Sync Target With Camera
+--track@d:ViewAngle,0,8192,1024
+
+cam = obj.getoption("camera_param")
+
+cam.d = d
+cam.tx = cam.x + cam.tx
+cam.ty = cam.y + cam.ty
+cam.tz = cam.z + cam.tz
+
+obj.setoption("camera_param", cam)
+
+@[Motion]Sync Target With Camera + Rotation
+--track@d:ViewAngle,0,8192,1024
+--track@rx:RotateX,-2160,2160,0
+--track@ry:RotateY,-2160,2160,0
+
+cam = obj.getoption("camera_param")
+
+cam.d = d
+cam.tx = cam.x + (d * math.sin(ry) * math.sin(rx)) + cam.tx --y
+cam.ty = cam.y + (d * math.cos(ry)) + cam.ty --z
+cam.tz = cam.z + (d * math.sin(ry) * math.cos(rx)) + cam.tz --x
+
+@[Motion]Position
+--track@ox:X,-2000,2000,0
+--track@oy:Y,-2000,2000,0
+--track@oz:Z,-2000,2000,0
+
+cam = obj.getoption("camera_param")
+
+cam.x = cam.x + ox
+cam.y = cam.y + oy
+cam.z = cam.z + oz

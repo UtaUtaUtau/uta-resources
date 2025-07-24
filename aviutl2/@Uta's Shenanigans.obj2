@@ -1,0 +1,215 @@
+@[Shader]Aurora
+--track@number:Number,1,100,20,1
+--track@thickness:Thickness,0,400,30,0.01
+--track@thicknessVar:ThicknessVariation,0,200,20,0.01
+--track@width:Width,0,4000,1280,1
+--track@height:Height,0,4000,720,1
+--track@speed:Speed,0,100,1,0.001
+--check@centered:Centered,1
+--color@col1:CenterColor,0xcbffd1
+--color@col2:EdgeColor1,0x0075e1
+--color@col3:EdgeColor2,0x1bcb2f
+--check@audio:AudioReactive,0
+--track@volume:AudioVolume,0,100,100,0.01
+--value@seed:Seed,1234
+--[[pixelshader@aurora:
+cbuffer constant0 : register(b0) {
+    float2 resolution;
+    float thickness;
+    float thicknessVar;
+    float3 centerCol;
+    float number;
+    float3 edgeCol1;
+    float centered;
+    float3 edgeCol2;
+    float audioReactive;
+    float volume;
+    float seedF;
+    float time;
+    float pad;
+    float audio[256];
+}
+void pcg(inout uint v) {
+    uint state = v * 747796405u + 2891336453u;
+	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	v = (word >> 22u) ^ word;
+}
+double randDouble(inout uint state) {
+    static double eps = 1.0L / 0xffffffffu;
+    pcg(state);
+    return eps * state;
+}
+float hash(uint x, uint seed) {
+    uint state = (x * 2542483 + 1294583) ^ uint(seedF) ^ seed;
+    pcg(state);
+    return float(randDouble(state));
+}
+float noise(float x, uint seed) {
+    float p = floor(x);
+    float w = frac(x);
+    
+    w = w * w * (3 - 2 * w);
+    return lerp(hash(p, seed), hash(p+1, seed), w);
+}
+float sampleAudio(float x) {
+    uint p = uint(floor(x));
+    float w = frac(x);
+    
+    w = w * w * (3 - 2 * w);
+    return lerp(audio[p], audio[p+1], w);
+}
+float sdfVertLine(float2 pos, float x) {
+    return abs(pos.x - x);
+}
+float sdfHorizLine(float2 pos, float y) {
+    return abs(pos.y - y);
+}
+static const float3x3 ACESInputMat =
+{
+    {0.59719, 0.35458, 0.04823},
+    {0.07600, 0.90834, 0.01566},
+    {0.02840, 0.13383, 0.83777}
+};
+
+// ODT_SAT => XYZ => D60_2_D65 => sRGB
+static const float3x3 ACESOutputMat =
+{
+    { 1.60475, -0.53108, -0.07367},
+    {-0.10208,  1.10813, -0.00605},
+    {-0.00327, -0.07276,  1.07602}
+};
+
+float3 RRTAndODTFit(float3 v)
+{
+    float3 a = v * (v + 0.0245786f) - 0.000090537f;
+    float3 b = v * (0.983729f * v + 0.4329510f) + 0.238081f;
+    return a / b;
+}
+
+float3 ACESFitted(float3 color)
+{
+    color = mul(ACESInputMat, color);
+
+    // Apply RRT and ODT
+    color = RRTAndODTFit(color);
+
+    color = mul(ACESOutputMat, color);
+
+    // Clamp to [0, 1]
+    color = saturate(color);
+
+    return color;
+}
+float4 aurora(float4 pos : SV_Position) : SV_Target {
+    float4 col = 0;
+    for (int i = 0; i < number; i++) {
+        float currThick = max(thickness + lerp(-thicknessVar, thicknessVar, noise(float(i), uint(i))), 0);
+        float2 center = float2(i / number, centered * 0.5) * resolution;
+        
+        float height = lerp(resolution.y * 0.6, resolution.y, noise(10 * center.x / resolution.x + time, 123124)) * 0.75;
+        if (centered > 0.5) height *= 0.5;
+        center.x += lerp(-1, 1, noise(time + i * 1.618, uint(i))) * resolution.x / number;
+        float grad = smoothstep(currThick * 1.618, 0, sdfVertLine(pos.xy, center.x));
+        grad *= smoothstep(height * 1.618, 0, sdfHorizLine(pos.xy, center.y));
+        
+        col.xyz += pow(abs(edgeCol2), 1 / 2.2) * grad;
+        col.w = lerp(col.w, 1, grad);
+        
+        center.y += lerp(-1, 1, noise(10 * center.x / resolution.x + time, uint(794654))) * resolution.y * 0.1;
+        
+        if (audioReactive > 0.5) {
+            float index = 256 * abs((center.x / resolution.x) * 2 - 1);
+            height *= 0.01 * volume * log(sampleAudio(index) + 1) / 8.4 + 1;
+        }
+        
+        grad = smoothstep(resolution.x * 0.03, 0, sdfVertLine(pos.xy, center.x) - currThick * 0.5);
+        grad *= smoothstep(height, 0, sdfHorizLine(pos.xy, center.y));
+        col.xyz += pow(abs(lerp(edgeCol1, centerCol, grad)), 1 / 2.2)* grad;
+        col.w = lerp(col.w, 1, grad);
+    }
+    col.xyz = pow(abs(ACESFitted(col.xyz)), 2.2);
+    return col;
+}]]
+function col2vec(col)
+    local r, g, b = RGB(col)
+    return r / 255, g / 255, b / 255
+end
+_, _, buf = obj.getaudio(nil, "audiobuffer", "spectrum", 1024)
+c1r, c1g, c1b = col2vec(col1)
+c2r, c2g, c2b = col2vec(col2)
+c3r, c3g, c3b = col2vec(col3)
+resource = {
+    width, height,
+    thickness,
+    thicknessVar,
+    c1r, c1g, c1b,
+    number,
+    c2r, c2g, c2b,
+    centered,
+    c3r, c3g, c3b,
+    audio,
+    volume,
+    seed,
+    obj.time * speed,
+    0,
+    unpack(buf)
+}
+obj.setoption("drawtarget", "tempbuffer", width, height)
+obj.pixelshader("aurora", "tempbuffer", nil, resource)
+obj.load("tempbuffer")
+obj.draw()
+
+@[Animation]Image Sequence
+--file@firstFrame:FirstFrame
+--value@fileNameFormat:FileNameFormat,"frame-%03d"
+--value@fileExt:FileExtension,"png"
+--value@frames:Frames,{0,10}
+--value@frameRate:FrameRate,30
+function getPath(str)
+    return str:match("(.*[/\\])")
+end
+
+frametime = math.floor(obj.time * frameRate)
+frame = 0
+if #frames == 2 then
+	frame = frametime % (frames[2] - frames[1] + 1) + frames[1]
+elseif #frames > 2 then
+	frame = frames[frametime % #frames + 1]
+end
+nameFrame = string.format(fileNameFormat, frame)
+file = string.format("%s%s.%s", getPath(firstFrame), nameFrame, fileExt)
+obj.load("image", file)
+
+@[Animation]Image Sequence (TimeControl)
+--track@timeControl:TimeControl,0,100,0,0.001
+--file@firstFrame:FirstFrame
+--value@fileNameFormat:FileNameFormat,"frame-%03d"
+--value@fileExt:FileExtension,"png"
+--value@frames:Frames,{0,10}
+function getPath(str)
+    return str:match("(.*[/\\])")
+end
+
+function round(x)
+	num, dec = math.modf(x)
+	if dec < 0.5 then
+		return num
+	else
+		return num + 1
+	end
+end
+
+allFrames = {}
+
+if #frames == 2 then
+    for i = frames[1], frames[2] do
+        allFrames[#allFrames + 1] = i
+    end
+else
+    allFrames = frames
+end
+
+frame = allFrames[round((#allFrames - 1) * timeControl / 100) + 1]
+nameFrame = string.format(fileNameFormat, frame)
+file = string.format("%s%s.%s", getPath(firstFrame), nameFrame, fileExt)
+obj.load("image", file)

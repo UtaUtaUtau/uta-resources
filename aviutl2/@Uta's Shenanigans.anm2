@@ -1,0 +1,747 @@
+@[MultiObject]Audio Reactive
+--track@vol:Volume,0,100,100,0.01
+--select@modeIdx:Mode=1,Fourier=0,Spectrum=1,Wave=2
+--track@ccenter:CurveCenter,0,100,50
+--track@cstrength:CurveStrength,0,5,1
+--track@px:X,-4000,4000,0,0.01
+--track@py:Y,-4000,4000,0,0.01
+--track@pz:Z,-4000,4000,0,0.01
+--track@rx:RotateX,-360,360,0,0.01
+--track@ry:RotateY,-360,360,0,0.01
+--track@rz:RotateZ,-360,360,0,0.01
+--track@zoom:Zoom,-100,400,0,0.01
+--track@smooth:Smoothing,0,100,75,0.01
+--check@bloom:Bloom,0
+--track@levelMin:LevelMin,0,500,0,0.01
+--track@levelMax:LevelMax,0,500,100,0.01
+--track@threshold:Threshold,0,100,75,0.01
+--track@foff:FourierOffset,0,1023,0,1
+--track@fscl:FourierScale,0.01,10,1,0.01
+
+function lerp(a, b, amt)
+	return a * (1 - amt) + b * amt
+end
+
+function ease(x, e, off)
+    local offp = 1 - off
+    local xp = 1 - x
+    if x < off then
+        return off * math.pow(x / off, e)
+    else
+        return 1 - offp * math.pow(xp / offp, e)
+    end
+end
+
+i = obj.index
+vol = vol / 100
+amt = 0
+modes = {"fourier", "spectrum", "pcm"}
+mode = modes[modeIdx+1]
+if TAaudioBuffer == nil then
+	TAaudioBuffer = {}
+end
+if TAaudioBuffer[obj.layer] == nil then
+	TAaudioBuffer[obj.layer] = {}
+	obj.getaudio(TAaudioBuffer[obj.layer], "audiobuffer", mode, obj.num)
+else	
+	if mode ~= "pcm" then
+        currBuffer = {}
+        obj.getaudio(currBuffer, "audiobuffer", mode, obj.num)
+        for i = 1, obj.num do
+            TAaudioBuffer[obj.layer][i] = lerp(currBuffer[i], TAaudioBuffer[obj.layer][i], smooth / 100)
+        end
+    else
+        obj.getaudio(TAaudioBuffer[obj.layer], "audiobuffer", mode, obj.num)
+    end
+end
+
+if obj.frame == 0 then
+    obj.getaudio(TAaudioBuffer[obj.layer], "audiobuffer", mode, obj.num)
+end
+
+e = cstrength
+off = ccenter / 100
+
+if mode == "spectrum" then
+	amt = TAaudioBuffer[obj.layer][i + 1] / 16384
+elseif mode == "fourier" then
+	i = (math.floor(i * (fscl*1024 / obj.num)) + foff) % 1024
+	amt = TAaudioBuffer[obj.layer][i + 1] / 32768
+elseif mode == "pcm" then
+	amt = ((TAaudioBuffer[obj.layer][i + 1] / 32768) + 1) / 2
+end
+
+if e == 0 then
+	amt = (amt > off) and 1 or 0
+else
+	amt = ease(amt, e, off)
+end
+
+obj.ox = obj.ox + lerp(0, px*vol, amt)
+obj.oy = obj.oy + lerp(0, py*vol, amt)
+obj.oz = obj.oz + lerp(0, pz*vol, amt)
+obj.rx = obj.rx + lerp(0, rx*vol, amt)
+obj.ry = obj.ry + lerp(0, ry*vol, amt)
+obj.rz = obj.rz + lerp(0, rz*vol, amt)
+obj.zoom = obj.zoom + lerp(0, (zoom*vol/100), amt)
+
+if bloom then
+	obj.effect("発光", "強さ", lerp(levelMin, levelMax, amt), "しきい値", threshold)
+end
+
+@[MultiObject]Polar Text
+--track@progress:LinearToPolar,0,100,100,0.01
+--track@radius:Radius,0,1000,100,0.01
+--track@rotation:Rotation,-720,720,0,0.01
+--track@shft:Shift,0,100,0,0.01
+--check@textRot:RotateText,1
+--check@zoom:ResizeFromShift,1
+--check@fade:FadeFromShift,0
+--track@rotOff:RotateOffset,-720,720,-90,0.01
+--track@shiftMult:ShiftMultiplier,0.01,10,1,0.01
+function lerp(a, b, amt)
+	return a * (1 - amt) + b * amt
+end
+
+function map(v, l, h, nl, nh)
+	local amt = (v - l) / (h - l)
+	return lerp(nl, nh, amt)
+end
+
+function constrain(v, l, h)
+	if (v < l) then
+		return l
+	elseif (v > h) then
+		return h
+	else
+		return v
+	end
+end
+
+i = obj.index
+n = obj.num
+
+r = radius - (radius + shiftMult * i) * (shft / 100)
+r = constrain(r, 0, radius)
+amt = progress / 100
+t = 2 * math.pi * i / n
+off = math.rad(rotation)
+
+x = r * math.cos(t + off)
+y = r * math.sin(-t - off)
+rot = math.deg(-off - t) + rotOff
+
+obj.ox = lerp(obj.ox, x, amt)
+obj.oy = lerp(obj.oy, y, amt)
+
+if (textRot == 1) then
+	obj.rz = lerp(obj.rz, rot, amt)
+end
+
+if (zoom == 1) then
+	obj.zoom = map(r, 0, radius, 0, 1)
+end
+
+if (fade == 1) then
+	obj.alpha = map(r, 0, radius, 0, 1)
+end
+
+@[MultiObject]Spacing Control
+--track@spacing:Spacing,-1000,1000,0,0.01
+--check@ctrlX:AffectX,1
+--check@ctrlY:AffectY,0
+space = spacing / 100
+if ctrlX then
+	obj.ox = obj.ox * (1 + space)
+end
+
+if ctrlY then
+	obj.oy = obj.oy * (1 + space)
+end
+
+@[MultiObject]Scatter
+--track@progress:Progress,0,100,0.01
+--track@range:Range,0,2048,128,0.01
+--check@in3D:3D,0
+--check@zoom:Zoom,1
+--check@fade:Fade,0
+--check@coordRot:CoordBasedRotate,1
+--check@rand:RandomRange,1,
+--value@origin:Origin,{0}
+--value@seed:Seed,1234
+function lerp(a, b, amt)
+	return a * (1 - amt) + b * amt
+end
+
+function sign(x)
+    if x < 0 then return -1 end
+    if x > 0 then return 1 end
+    return 0
+end
+
+i = obj.index
+amt = progress / 100
+
+ox = obj.ox
+oy = obj.oy
+oz = obj.oz
+
+if #origin >= 2 then
+	ox = origin[1]
+	oy = origin[2]
+    if #origin >= 3 or in3D == 1 then
+         oz = origin[3]
+    end
+end
+
+if rand == 1 then
+	range = obj.rand(0, range, (i * 337 + 17) * seed + seed, 1)
+end 
+
+pos = {
+    x = obj.rand(-range, range, i + seed, 0),
+    y = obj.rand(-range, range, i * 373 + 431 + seed, 0),
+    z = 0,
+    rx = obj.rand(-360, 360, i * 463 + 349 + seed, 0),
+    ry = obj.rand(-360, 360, i * 727 + 419 + seed, 0),
+    rz = obj.rand(-360, 360, i * 619 + 577 + seed, 0)
+}
+
+if in3D == 1 then
+    pos.z = obj.rand(-range, range, i * 397 + 53 + seed, 0)
+end
+
+obj.ox = lerp(ox, obj.ox + pos.x, amt)
+obj.oy = lerp(oy, obj.oy + pos.y, amt)
+obj.oz = lerp(oz, obj.oz + pos.z, amt)
+
+if coordRot == 1 then
+    if in3D == 1 then
+        theta = math.deg(math.acos(pos.y / math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z)) + math.pi / 2)
+        phi = math.deg(sign(pos.x) * math.acos(pos.z / math.sqrt(pos.z * pos.z + pos.x * pos.x)) + math.pi / 2)
+        obj.rx = lerp(obj.rx, phi, amt)
+        obj.ry = lerp(obj.ry, theta, amt)
+    else
+        pos.rz = math.deg(math.atan2(pos.y, pos.x) + math.pi / 2)
+        obj.rz = lerp(obj.rz, pos.rz, amt)
+    end
+else
+	obj.rz = lerp(obj.rz, obj.rz + pos.rz, amt)
+    if in3D == 1 then
+        obj.rx = lerp(obj.rx, obj.rx + pos.rx, amt)
+        obj.ry = lerp(obj.ry, obj.ry + pos.ry, amt)
+    end
+end
+
+if zoom == 1 then
+	obj.zoom = 1 - amt
+end
+
+if fade == 1 then
+	obj.alpha = 1 - amt
+end
+
+@[Motion]Audio Reactive
+--track@vol:Volume,0,500,100,0.01
+--track@size:Sample Size,1,1024,1024,1
+--track@smooth:Smoothing,0,100,0
+--track@px:X,-4000,4000,0,0.01
+--track@py:Y,-4000,4000,0,0.01
+--track@pz:Z,-4000,4000,0,0.01
+--track@rx:RotateX,-360,360,0,0.01
+--track@ry:RotateY,-360,360,0,0.01
+--track@rz:RotateZ,-360,360,0,0.01
+--track@zoom:Zoom,-100,400,0,0.01
+--track@alpha:Transparent,-100,100,0,0.01
+function lerp(a, b, t)
+	return a * (1 - t) + b * t
+end
+
+function rootMeanSquare(t)
+	local rms = 0
+	for i = 1, #t do
+		rms = rms + (t[i] / 32768) ^ 2
+	end
+	return math.sqrt(rms / #t)
+end
+
+vol = vol / 100
+smooth = smooth / 100
+buf = {}
+obj.getaudio(buf, "audiobuffer", "pcm", size)
+if amp == nil then
+	amp = {}
+	amp[obj.layer] = rootMeanSquare(buf)
+else
+	if obj.frame ~= 0 then
+		amp[obj.layer] = lerp(rootMeanSquare(buf), amp[obj.layer], smooth)
+	else
+		amp[obj.layer] = rootMeanSquare(buf)
+	end
+end
+
+cAmp = amp[obj.layer]
+
+obj.ox = obj.ox + px*vol*cAmp
+obj.oy = obj.oy + py*vol*cAmp
+obj.oz = obj.oz + pz*vol*cAmp
+obj.rx = obj.rx + rx*vol*cAmp
+obj.ry = obj.ry + ry*vol*cAmp
+obj.rz = obj.rz + rz*vol*cAmp
+obj.zoom = obj.zoom + (zoom / 100)*vol*cAmp
+obj.alpha = obj.alpha + (alpha / 100)*vol*cAmp
+
+@[Motion]BPM Beat
+--track@vol:Volume,0,500,100,0.01
+--track@bpm:BPM,0,1024,100,0.01
+--select@mode:Mode,Pump=0,Smooth=1
+--track@off:Offset,0,100,0,0.001
+--track@settle:SettleSpeed,1,10,0.01
+--track@px:X,-4000,4000,0,0.01
+--track@py:Y,-4000,4000,0,0.01
+--track@pz:Z,-4000,4000,0,0.01
+--track@rx:RotateX,-360,360,0,0.01
+--track@ry:RotateY,-360,360,0,0.01
+--track@rz:RotateZ,-360,360,0,0.01
+--track@zoom:Zoom,-100,400,0,0.01
+--track@alpha:Transparent,-100,100,0,0.01
+vol = vol / 100
+off = off / 100
+bps = bpm / 60
+
+local amp = 1
+if mode == 0 then
+    amp = (1 - (obj.time * bps + off) % 1) ^ settle
+else
+    amp = math.abs(math.sin(math.pi*(obj.time*bps) + math.pi/2 + (math.pi/2)*off)) ^ settle
+end
+
+obj.ox = obj.ox + px*vol*amp
+obj.oy = obj.oy + py*vol*amp
+obj.oz = obj.oz + pz*vol*amp
+obj.rx = obj.rx + rx*vol*amp
+obj.ry = obj.ry + ry*vol*amp
+obj.rz = obj.rz + rz*vol*amp
+obj.zoom = obj.zoom + (zoom/100)*vol*amp
+obj.alpha = obj.alpha + (alpha/100)*vol*amp
+
+@[MultiObject]Ultimate MultiObject Intro/Outro
+--track0:TimeControl,0,100,0,0.001
+--track@animLength:AnimLength,-10,10,1,0.001
+--track@delayLength:DelayLength,0,10,0.033,0.001
+--select@easing:EaseType,Linear=0,EaseIn=1,EaseOut=2,EaseInOut=3,TimeControl=4
+--select@easingShape:EasingShape=2,Sine=0,Quad=1,Cubic=2,Quart=3,Quint=4,Expo=5,Circ=6,Back=7,Elastic=8,Bounce=9
+--check@hideBeforeAppear:HideBeforeAppear,1
+--select@sequence:Sequence,FromStart=0,FromEnd=1,FromCenter=2,ToCenter=3,StaggeredFromCenter=4,StaggeredToCenter=5,StaggeredFromCenter2=6,StaggeredToCenter2=7,Random=8
+--check@control:ControllableReveal,0
+--track1:RevealProgress,0,100,0,0.001
+--track@distance:Distance,0,4000,100,0.001
+--track@startAngle:StartAngle,-360,360,90,0.001
+--track@endAngle:EndAngle,-360,360,0,0.001
+--select@angleMode:AngleMode,Single=0,RoundRobin=1,FullTwist=2,Random=3
+--track@divs:AngleNum,1,360,1,1
+--check@in3D:3D,0
+--track@startAngle2:StartAngle2,-360,360,0,0.001
+--track@endAngle2:EndAngle2,-360,360,0,0.001
+--check@applyAngle:ApplyAngle,0
+--track@rx:RotateX,-360,360,0,0.01
+--track@ry:RotateY,-360,360,0,0.01
+--track@rz:RotateZ,-360,360,0,0.01
+--track@zoom:Zoom,0,400,100,0.01
+--track@alpha:Transparent,0,100,100,0.01
+--value@seed:Seed,1234
+require("easings")
+function lerp(a, b, t)
+    return a * (1 - t) + b * t
+end
+
+function saturate(x)
+    return math.max(math.min(x, 1), 0)
+end
+
+function ease(x)
+    x = saturate(x)
+    if easing == 0 then
+        return x
+    elseif easing < 4 then
+        local easeIndex = easing + easingShape * 3
+        return eases[easeIndex](x)
+    else
+        return obj.getvalue(0, x * obj.totaltime) / 100
+    end
+    return x
+end
+
+function getAngle(index, s, e)
+    local angle = s
+    if angleMode == 1 then
+        local amt = (index % divs) / divs
+        angle = lerp(s, e, amt)
+    elseif angleMode == 2 then
+        local amt = math.floor(divs * index / obj.num) / divs
+        angle = lerp(s, e, amt)
+    elseif angleMode == 3 then
+        local amt = obj.rand(0, divs, math.abs(seed), 0) / divs
+        angle = lerp(s, e, amt)
+    end
+    return math.rad(angle)
+end
+
+function progress(t, n)
+    local num = obj.num
+    if sequence == 2 or sequence == 3 then num = math.floor(num / 2) end
+    return num * obj.getvalue(1, t) / 100 - n
+end
+
+function sign(x)
+    if x > 0 then
+        return 1
+    elseif x < 0 then
+        return -1
+    end
+    return 0
+end
+
+function bisection(n, lo, hi)
+    local l = lo
+    local h = hi
+    local c
+    for i = 1, 1024 do
+        c = (l + h) / 2
+        local fc = progress(c, n)
+        local fl = progress(l, n)
+        if fc == 0 or (h - l) / 2 < 1e-8 then
+            return c
+        end
+        
+        if sign(fc) == sign(fl) then
+            l = c
+        else
+            h = c
+        end
+    end
+    return c
+end
+
+index = obj.index
+n2 = math.floor(obj.num / 2)
+if sequence == 1 then
+    index = obj.num - index - 1
+elseif sequence == 2 then
+    index = math.abs(index - n2)
+elseif sequence == 3 then
+    index = n2 - math.abs(index - n2)
+elseif sequence == 4 then
+    if obj.index <= n2 then
+        index = 2 * (n2 - index)
+    else
+        index = 2 * (index - n2) - 1
+    end
+elseif sequence == 5 then
+    if obj.index <= n2 then
+        index = 2 * index
+    else
+        index = 2 * (obj.num - index) - 1
+    end
+elseif sequence == 6 then
+    if obj.index < n2 then
+        index = 2 * (n2 - index) - 1
+    else
+        index = 2 * (index - n2)
+    end
+elseif sequence == 7 then
+    if obj.index < n2 then
+        index = 2 * index + 1
+    else
+        index = 2 * (obj.num - index - 1)
+    end
+elseif sequence == 8 then
+    local indices = {}
+    for i = 0, obj.num - 1 do
+        table.insert(indices, i)
+    end
+    for i = 1, obj.num do
+        local dst = obj.rand(1, obj.num, -math.abs(seed), i)
+        local swap = indices[i]
+        indices[i] = indices[dst]
+        indices[dst] = swap
+    end
+    index = indices[index + 1]
+end
+
+index = math.min(index, obj.num - 1)
+appearTime = index * delayLength
+
+if control == 1 then
+    appearTime = bisection(index, 0, obj.totaltime)
+end
+
+amt = 1
+if animLength == 0 then
+    if obj.time < index * delayLength then
+        amt = 0
+    end
+elseif animLength > 0 then
+    amt = ease((obj.time - appearTime) / animLength)
+else
+    amt = ease((obj.totaltime - obj.time - appearTime) / -animLength)
+end
+
+angle = getAngle(index, startAngle, endAngle)
+angle2 = getAngle(index, startAngle2, endAngle2)
+
+x = distance * math.cos(angle)
+y = distance * math.sin(angle)
+z = 0
+if in3D == 0 and applyAngle == 1 then
+    rz = rz + math.deg(angle) - 90
+end
+if in3D == 1 then
+    x = distance * math.sin(angle2) * math.cos(angle)
+    y = distance * math.sin(angle2) * math.sin(angle)
+    z = distance * math.cos(angle2)
+end
+
+obj.ox = obj.ox + x * (1 - amt)
+obj.oy = obj.oy + y * (1 - amt)
+obj.oz = obj.oz + z * (1 - amt)
+obj.rx = obj.rx + rx * (1 - amt)
+obj.ry = obj.ry + ry * (1 - amt)
+obj.rz = obj.rz + rz * (1 - amt)
+obj.zoom = lerp(zoom / 100, obj.zoom, amt)
+obj.alpha = lerp(alpha / 100, obj.alpha, amt)
+
+if hideBeforeAppear == 1 then
+    if animLength > 0 then
+        if obj.time < appearTime then obj.alpha = 0 end
+    else
+        if obj.time > obj.totaltime - appearTime then obj.alpha = 0 end
+    end
+end
+
+@[Motion]Motion Smoothing
+--track@margin:FrameMargin,1,100,5,1
+--select@windowIndex:WindowType,Cosine=0,Hann=1,Gaussian=2,Expo=3
+
+function cosineWindow(x, m)
+	if math.abs(x) > m then return 0 end
+	return math.cos(math.pi * x / (2 * m))
+end
+
+function hannWindow(x, m)
+    if math.abs(x) > m then return 0 end
+    return (1 + math.cos(math.pi * x / m)) / 2
+end
+
+function gaussianWindow(x, m)
+	local b = 2 * x / m
+	return math.exp(-b * b)
+end
+
+function expWindow(x, m)
+	local b = 1.5 * math.exp(1) / m
+	return math.exp(-b * math.abs(x))
+end
+
+windows = {cosineWindow, hannWindow, gaussianWindow, expWindow}
+
+x = 0
+y = 0
+z = 0
+zoom = 0
+alpha = 0
+aspect = 0
+rx = 0
+ry = 0
+rz = 0
+totalweight = 0
+window = windows[windowIndex+1]
+
+for i = -margin, margin do
+	local weight = window(i, margin)
+	local frame = math.max(obj.time + (i / obj.framerate), 0)
+	totalweight = totalweight + weight
+	x = x + obj.getvalue("x", frame) * weight
+	y = y + obj.getvalue("y", frame) * weight
+	z = z + obj.getvalue("z", frame) * weight
+	zoom = zoom + obj.getvalue("zoom", frame) * weight
+	alpha = alpha + obj.getvalue("alpha", frame) * weight
+	aspect = aspect + obj.getvalue("aspect", frame) * weight
+	rx = rx + obj.getvalue("rx", frame) * weight
+	ry = ry + obj.getvalue("ry", frame) * weight
+	rz = rz + obj.getvalue("rz", frame) * weight
+end
+
+obj.ox = (x / totalweight) - obj.x
+obj.oy = (y / totalweight) - obj.y
+obj.oz = (z / totalweight) - obj.z
+obj.zoom = zoom / totalweight / 100
+obj.alpha = alpha / totalweight
+obj.aspect = aspect / totalweight
+obj.rx = rx / totalweight
+obj.ry = ry / totalweight
+obj.rz = rz / totalweight
+
+@[Transform]Skew
+--track@sx:SkewX,-100,100,0,0.001
+--track@sy:SkewY,-100,100,0,0.001
+function skewing(x, y, sx, sy)
+	return x + y * sx, x * sy + y
+end
+
+sx, sy = sx / 100, sy / 100
+w2, h2 = obj.w / 2, obj.h / 2
+x0, y0 = skewing(-w2, -h2, sx, sy)
+x1, y1 = skewing(w2, -h2, sx, sy)
+x2, y2 = skewing(w2, h2, sx, sy)
+x3, y3 = skewing(-w2,  h2, sx, sy)
+
+obj.ox, obj.oy = skewing(obj.ox, obj.oy, sx, sy)
+obj.drawpoly(x0, y0, 0, x1, y1, 0, x2, y2, 0, x3, y3, 0)
+
+@[MultiObject]Rotate
+--track@rx:RotateX,-360,360,0
+--track@ry:RotateY,-360,360,0
+--track@rz:RotateZ,-360,360,0
+--check@rotObj:RotateObjects,0
+--track@rotMul:RotationMultiplier,1,10,1,1;
+function rotate(x, y, z, rx, ry, rz)
+	local gs = math.sin(rx)
+	local gc = math.cos(rx)
+	local bs = math.sin(ry)
+	local bc = math.cos(ry)
+	local as = math.sin(rz)
+	local ac = math.cos(rz)
+
+	return x * ac * bc + y * (ac * bs * gs - as * gc) + z * (ac * bs * gc + as * gs), x * as * bc + y * (as * bs * gs + ac * gc) + z * (as * bs * gc - ac * gs), -x * bs + y * bc * gs + z * bc * gc
+end
+
+rx = rx * rotMul
+ry = ry * rotMul
+rz = rz * rotMul
+
+radX = math.rad(rx)
+radY = math.rad(ry)
+radZ = math.rad(rz)
+
+obj.ox, obj.oy, obj.oz = rotate(obj.ox, obj.oy, obj.oz, radX, radY, radZ)
+
+if rotObj == 1 then
+	obj.rx = rx
+	obj.ry = ry
+	obj.rz = rz
+end
+
+@[MultiObject]Scale
+--track@zoom:Zoom,0,400,100
+--track@zoomX:X,0,400,100
+--track@zoomY:Y,0,400,100
+--track@zoomZ:Z,0,400,100
+obj.ox = obj.ox * (zoom / 100) * (zoomX / 100)
+obj.oy = obj.oy * (zoom / 100) * (zoomY / 100)
+obj.oz = obj.oz * (zoom / 100) * (zoomZ / 100)
+obj.effect("拡大率", "拡大率", zoom, "X", zoomX, "Y", zoomY, "Z", zoomZ)
+
+@[MultiObject]PerObjectDelay
+--track@delay:DelayLength,0,10,0.033,0.001
+--track@fade:FadeLength,0,10,0.1,0.001
+--select@sequence:Sequence,FromStart=0,FromEnd=1,FromCenter=2,ToCenter=3,StaggeredFromCenter=4,StaggeredToCenter=5,StaggeredFromCenter2=6,StaggeredToCenter2=7,Random=8
+--check@hide:HideBeforeAppear,1
+--value@seed:Seed,1234
+
+function clamp(x, l, h)
+    if x < l then
+        return l
+    elseif x > h then
+        return h
+    end
+    return x
+end
+
+index = obj.index
+n2 = math.floor(obj.num / 2)
+if sequence == 1 then
+    index = obj.num - index - 1
+elseif sequence == 2 then
+    index = math.abs(index - n2)
+elseif sequence == 3 then
+    index = n2 - math.abs(index - n2)
+elseif sequence == 4 then
+    if obj.index <= n2 then
+        index = 2 * (n2 - index)
+    else
+        index = 2 * (index - n2) - 1
+    end
+elseif sequence == 5 then
+    if obj.index <= n2 then
+        index = 2 * index
+    else
+        index = 2 * (obj.num - index) - 1
+    end
+elseif sequence == 6 then
+    if obj.index < n2 then
+        index = 2 * (n2 - index) - 1
+    else
+        index = 2 * (index - n2)
+    end
+elseif sequence == 7 then
+    if obj.index < n2 then
+        index = 2 * index + 1
+    else
+        index = 2 * (obj.num - index - 1)
+    end
+elseif sequence == 8 then
+    local indices = {}
+    for i = 0, obj.num - 1 do
+        table.insert(indices, i)
+    end
+    for i = 1, obj.num do
+        local dst = obj.rand(1, obj.num, -math.abs(seed), i)
+        local swap = indices[i]
+        indices[i] = indices[dst]
+        indices[dst] = swap
+    end
+    index = indices[index + 1]
+end
+
+index = math.min(index, obj.num - 1)
+
+currX = obj.getvalue("x")
+currY = obj.getvalue("y")
+currZ = obj.getvalue("z")
+currZoom = obj.getvalue("zoom") / 100
+currAlpha = obj.getvalue("alpha")
+currAspect = obj.getvalue("aspect")
+currRX = obj.getvalue("rx")
+currRY = obj.getvalue("ry")
+currRZ = obj.getvalue("rz")
+
+delayTime = clamp(obj.time - delay * index, 0, obj.totaltime)
+delayX = obj.getvalue("x", delayTime)
+delayY = obj.getvalue("y", delayTime)
+delayZ = obj.getvalue("z", delayTime)
+delayZoom = obj.getvalue("zoom", delayTime) / 100
+delayAlpha = obj.getvalue("alpha", delayTime)
+delayAspect = obj.getvalue("aspect", delayTime)
+delayRX = obj.getvalue("rx", delayTime)
+delayRY = obj.getvalue("ry", delayTime)
+delayRZ = obj.getvalue("rz", delayTime)
+
+obj.ox = obj.ox + delayX - currX
+obj.oy = obj.oy + delayY - currY
+obj.oz = obj.oz + delayZ - currZ
+obj.zoom = delayZoom / (currZoom + 1e-16)
+obj.alpha = delayAlpha / (currAlpha + 1e-16)
+obj.aspect = obj.aspect + delayAspect - currAspect
+obj.rx = obj.rx + delayRX - currRX
+obj.ry = obj.ry + delayRY - currRY
+obj.rz = obj.rz + delayRZ - currRZ
+
+if hide == 1 then
+    local d = obj.time - delay * index
+    if fade == 0 then
+        obj.alpha = (d < 0) and 0 or obj.alpha
+    else
+        obj.alpha = obj.alpha * clamp(d / fade, 0, 1)
+    end
+end
