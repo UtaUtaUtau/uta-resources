@@ -638,7 +638,7 @@ end
 
 for i = -obj.track0, obj.track0 do
 	local weight = window(i, obj.track0)
-	local frame = obj.time + (i / obj.framerate)
+	local frame = math.max(obj.time + (i / obj.framerate), 0)
 	totalweight = totalweight + weight
 	x = x + obj.getvalue("x", frame) * weight
 	y = y + obj.getvalue("y", frame) * weight

@@ -59,6 +59,7 @@ obj.effect("Zoom%", "Zoom%", obj.track0, "X", obj.track1, "Y", obj.track2)
 @TA-Per Object Delay
 --track0:Delay (sec),0,10,0.05,0.01
 --track1:Fade (sec),0,10,0,0.01
+--track2:Reverse,0,1,0,1
 --check0:Hide delayed objects,1
 
 function clamp(x, l, h)
@@ -82,7 +83,12 @@ currRZ = obj.getvalue("rz")
 
 debug_print(obj.zoom)
 
-delayTime = clamp(obj.time - obj.track0 * obj.index, 0, obj.totaltime)
+index = obj.index
+if obj.track2 == 1 then
+  index = obj.num - obj.index - 1
+end
+
+delayTime = clamp(obj.time - obj.track0 * index, 0, obj.totaltime)
 delayX = obj.getvalue("x", delayTime)
 delayY = obj.getvalue("y", delayTime)
 delayZ = obj.getvalue("z", delayTime)

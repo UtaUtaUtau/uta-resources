@@ -1,0 +1,45 @@
+@Shake
+--track0:Amplitude,0,2000,400,0.01
+--track1:Blur Strength,0,500,0,1
+--dialog:Interval[frames],itvl=1;Color Shift/chk,shift=0;Gap width,sgap=20;Shift Type[0-6],stype=4;Seed,seed=1;Use first frame/chk,firstframe=1;
+function lerp(a, b, t)
+  return a * (1 - t) + b * t
+end
+t = obj.getvalue("scenechange") * 2
+amp = obj.track0 / 2
+interval = math.max(1, itvl)
+if t > 1 then
+  t = 2 - t
+  obj.copybuffer("tmp", "frm")
+elseif firstframe == 0 then
+  obj.copybuffer("tmp", "frm")
+else
+  obj.copybuffer("tmp", "obj")
+end
+t = t * t * (3 - 2 * t)
+obj.load("figure", "Background", 0)
+obj.draw()
+
+obj.load("tempbuffer")
+
+amt = (obj.frame % interval) / interval
+amt = amt * amt * (3 - 2 * amt)
+xoff1 = obj.rand(-amp, amp, seed, math.floor(obj.frame / interval))
+yoff1 = obj.rand(-amp, amp, seed + 1234, math.floor(obj.frame / interval))
+
+xoff2 = obj.rand(-amp, amp, seed, math.floor(obj.frame / interval) + 1)
+yoff2 = obj.rand(-amp, amp, seed + 1234, math.floor(obj.frame / interval) + 1)
+
+xoff = lerp(xoff1, xoff2, amt) * t * t
+yoff = lerp(yoff1, yoff2, amt) * t * t
+
+angle = math.deg(math.atan2(yoff2 - yoff1, xoff2 - xoff1) + math.pi * 0.5)
+
+if shift == 1 and sgap ~= 0 then
+  obj.effect("Color shift", "Gap width", sgap * t, "Angle", angle, "type", stype%7)
+end
+obj.effect("Color compensation", "Lightness", lerp(100, 200, t * t * t))
+if obj.track1 > 0 then
+  obj.effect("Direction blur", "Range", obj.track1 * t * t, "Angle", angle)
+end
+obj.draw(xoff, yoff)
